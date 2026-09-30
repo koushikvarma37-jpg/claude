@@ -131,7 +131,10 @@ class ChatClient:
             body["messages"] = to_text_protocol(messages, tools)
 
         resp = self._http.post("/chat/completions", json=body)
-        resp.raise_for_status()
+        if resp.is_error:
+            # Keep the server's explanation; raise_for_status() alone throws it away.
+            raise httpx.HTTPStatusError(f"model server returned {resp.status_code}: {resp.text[:500]}",
+                                        request=resp.request, response=resp)
         msg = resp.json()["choices"][0]["message"]
         content = _THINK.sub("", msg.get("content") or "").strip()
 

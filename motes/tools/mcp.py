@@ -231,6 +231,9 @@ def register(reg: Registry, cfg: dict) -> list[MCPClient]:
             continue
         default_risk = spec.get("risk", "external")
         overrides = spec.get("tool_risk", {})
+        # Fewer tools means a shorter prompt, which matters on CPU-only machines.
+        include, exclude = spec.get("include"), set(spec.get("exclude") or [])
+        tools = [t for t in tools if (include is None or t["name"] in include) and t["name"] not in exclude]
         for t in tools:
             reg.add(Tool(
                 name=tool_name(client.name, t["name"]),

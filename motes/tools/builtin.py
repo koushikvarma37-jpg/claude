@@ -45,7 +45,7 @@ DESTRUCTIVE = re.compile(
 )
 
 
-def shell_risk(args: dict) -> str:
+def shell_risk(args: dict, goal: dict | None = None) -> str:
     cmd = args.get("command", "")
     if DESTRUCTIVE.search(cmd):
         return "destructive"
@@ -161,7 +161,7 @@ def web_search(args: dict, ctx: ToolContext) -> str:
     return "\n\n".join(f"{t}\n{u}\n{s}" for t, u, s in results)
 
 
-def http_risk(args: dict) -> str:
+def http_risk(args: dict, goal: dict | None = None) -> str:
     return "read" if args.get("method", "GET").upper() in ("GET", "HEAD") else "external"
 
 
@@ -245,12 +245,22 @@ def notify_owner(args: dict, ctx: ToolContext) -> str:
     return f"owner notified via {', '.join(sent) or 'dashboard'}"
 
 
+def schedule_risk(args: dict, goal: dict | None = None) -> str:
+    """One-off follow-ups are routine. A standing (recurring) job, or a follow-up that schedules
+    more follow-ups, changes what runs on the owner's machine from now on, so it needs a say."""
+    recurring = (args.get("schedule") or "once").strip().lower().split(" ")[0] in ("every", "daily", "cron")
+    return "external" if recurring or (goal or {}).get("parent_id") else "write"
+
+
 def schedule_task(args: dict, ctx: ToolContext) -> str:
-    schedule = args.get("schedule", "once")
+    schedule = args.get("schedule") or "once"
     first = sched.next_run(schedule, time.time(), first=True)
-    character = (ctx.goal or {}).get("character", "pip")
-    goal = ctx.store.add_goal(args["title"], args["instructions"], character, schedule, first)
-    return f"scheduled task {goal['id']} ({schedule})"
+    parent = ctx.goal or {}
+    goal = ctx.store.add_goal(args["title"], args["instructions"], parent.get("character", "pip"),
+                              schedule, first, parent_id=parent.get("id"))
+    when = "only when triggered" if first is None else \
+        "right away" if first <= time.time() + 1 else time.strftime("%Y-%m-%d %H:%M", time.localtime(first))
+    return f"scheduled task {goal['id']} ({schedule}); it will first run {when}"
 
 
 def register(reg: Registry, cfg: dict) -> None:
@@ -280,7 +290,8 @@ def register(reg: Registry, cfg: dict) -> None:
                      params(["url"], url=string), web_fetch))
         reg.add(Tool("http_request", "Make an HTTP request to an API. GET/HEAD are read-only; other methods act externally.",
                      params(["url"], url=string, method=string, headers={"type": "object"},
-                            body={"description": "string or JSON body"}),
+                            body={"anyOf": [{"type": "string"}, {"type": "object"}],
+                                  "description": "string or JSON body"}),
                      http_request, risk_fn=http_risk))
     if tcfg.get("email", False):
         reg.add(Tool("read_inbox", "Read recent emails from the owner's inbox.",
@@ -290,16 +301,17 @@ def register(reg: Registry, cfg: dict) -> None:
                      send_email, risk="external"))
 
     reg.add(Tool("remember", "Save a fact to long-term memory, shared by all motes.",
-                 params(["key", "value"], key=string, value=string), remember))
-    reg.add(Tool("recall", "Search long-term memory.", params([], query=string), recall))
+                 params(["key", "value"], key=string, value=string), remember, untrusted=False))
+    reg.add(Tool("recall", "Search long-term memory.", params([], query=string), recall, untrusted=False))
     reg.add(Tool("notify_owner", "Send the owner a short notification (phone/desktop).",
-                 params(["message"], message=string, title=string), notify_owner))
+                 params(["message"], message=string, title=string), notify_owner, untrusted=False))
     reg.add(Tool(
         "schedule_task",
-        "Create a follow-up task for later. schedule: 'once', 'at YYYY-MM-DD HH:MM', "
-        "'every 30m', 'daily 08:00', or 'cron <expr>'.",
+        "Create a follow-up task that runs later on its own. schedule examples: 'in 10m', 'in 2h', "
+        "'in 1d' (one time, that long from now), 'every 30m', 'daily 08:00', 'cron 0 9 * * 1-5', "
+        "'at YYYY-MM-DD HH:MM', or 'once' (right away).",
         params(["title", "instructions"], title=string, instructions=string, schedule=string),
-        schedule_task, risk="write",
+        schedule_task, risk_fn=schedule_risk, untrusted=False,
     ))
 
 

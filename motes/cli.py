@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import signal
 import sys
 import time
 import webbrowser
@@ -169,7 +170,7 @@ def cmd_approvals(a) -> None:
 
 def _decide(a, approve: bool) -> None:
     store = _store()
-    ap = store.decide_approval(a.approval_id, approve, a.note or "")
+    ap = store.decide_approval(a.approval_id, approve, a.note or "", getattr(a, "trust", False))
     if not ap:
         sys.exit("no such approval")
     run = store.get_run(ap["run_id"])
@@ -246,6 +247,8 @@ def cmd_laya(a) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # `motes goals | head` shouldn't print a traceback
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     p = argparse.ArgumentParser(prog="motes", description="Always-on personal agents on your own machine.")
@@ -270,7 +273,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("instructions", nargs="+")
     s.add_argument("--title")
     s.add_argument("--mote", default="pip", choices=list(characters.BY_ID))
-    s.add_argument("--schedule", default="once", help="once | every 30m | daily 07:30 | cron 0 9 * * 1-5 | manual")
+    s.add_argument("--schedule", default="once", help="once | in 2h | every 30m | daily 07:30 | cron 0 9 * * 1-5 | manual")
     s.set_defaults(fn=cmd_add)
 
     sub.add_parser("goals", help="list goals").set_defaults(fn=cmd_goals)
@@ -289,6 +292,8 @@ def main(argv: list[str] | None = None) -> None:
         s = sub.add_parser(name, help=f"{name} a pending action")
         s.add_argument("approval_id")
         s.add_argument("--note")
+        if approve:
+            s.add_argument("--trust", action="store_true", help="also allow this tool for the rest of the run")
         s.set_defaults(fn=lambda a, v=approve: _decide(a, v))
 
     s = sub.add_parser("apps", help="list/add/remove app connections (MCP)")

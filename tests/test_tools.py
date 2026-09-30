@@ -94,11 +94,13 @@ def test_mcp_stdio_server(tmp_path):
     reg = Registry()
     clients = register(reg, {"mcp_servers": [
         {"name": "calc", "command": sys.executable, "args": [str(script)], "risk": "external"},
+        {"name": "calc_only_add", "command": sys.executable, "args": [str(script)], "include": ["add"]},
         {"name": "broken", "command": "/nonexistent/binary"},
         {"name": "needs-key", "url": "${SURELY_UNSET_MOTES_VAR}"},
     ]})
     try:
-        assert [c.name for c in clients] == ["calc"]
+        assert [c.name for c in clients] == ["calc", "calc_only_add"]
+        assert reg.get("calc_only_add__add") and not reg.get("calc_only_add__post")
         add, post = reg.get("calc__add"), reg.get("calc__post")
         assert add.risk == "read" and post.risk == "external"
         assert add.func({"a": 2, "b": 3}, None) == "5"
@@ -114,3 +116,19 @@ def test_mcp_client_direct(tmp_path):
     client.initialize()
     assert {t["name"] for t in client.list_tools()} == {"add", "post"}
     client.close()
+
+
+def test_builtin_tool_schemas_are_typed():
+    """Local model servers (llama.cpp, vLLM guided decoding) reject parameters without a type."""
+    from motes import config
+    from motes.tools import builtin
+
+    cfg = config.defaults()
+    cfg["tools"]["email"] = True
+    reg = Registry()
+    builtin.register(reg, cfg)
+    for tool in reg.tools.values():
+        schema = tool.parameters
+        assert schema["type"] == "object", tool.name
+        for name, prop in schema["properties"].items():
+            assert "type" in prop or "anyOf" in prop, f"{tool.name}.{name} has no type"

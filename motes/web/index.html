@@ -16,6 +16,11 @@
 <section class="cast" id="cast"></section>
 
 <main>
+  <section class="panel inbox" id="inbox" hidden>
+    <h2>From your motes</h2>
+    <div id="messages"></div>
+  </section>
+
   <section class="panel compose">
     <h2>Give a mote a goal</h2>
     <form id="goal-form">
@@ -25,7 +30,7 @@
         <label>Who <select id="g-char"></select></label>
         <label>When <input id="g-sched" value="once" list="scheds"></label>
         <datalist id="scheds">
-          <option value="once"><option value="every 30m"><option value="every 2h">
+          <option value="once"><option value="in 1h"><option value="every 30m"><option value="every 2h">
           <option value="daily 07:00"><option value="cron 0 9 * * 1-5"><option value="manual">
         </datalist>
         <button type="submit">Start</button>

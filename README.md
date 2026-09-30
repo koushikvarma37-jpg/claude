@@ -14,9 +14,9 @@ with you before doing anything that matters.
 
 - **Your models.** Any OpenAI-compatible server: Ollama, LM Studio, vLLM, llama.cpp. No cloud API needed.
 - **Two minds.** A *brain* (any open chat model) plans and acts. [**Laya**](https://github.com/NandhaKishorM/laya), a non-autoregressive System-1 decision engine, judges every risky action before it runs: calibrated probabilities in one forward pass, in 100+ languages. You can fine-tune it on your own approvals with Laya's RLCD training recipe.
-- **Always on.** Goals run on schedules (`daily 07:00`, `every 15m`, cron) or from webhooks. Runs save after every step, so they survive restarts, sleep and reboots, and pick up where they left off.
+- **Always on.** Goals run on schedules (`in 2h`, `daily 07:00`, `every 15m`, cron) or from webhooks. Motes can schedule their own one-off follow-ups ("check again in an hour"); a recurring job, or a follow-up that schedules more follow-ups, needs your OK. Runs save after every step, so they survive restarts, sleep and reboots, and pick up where they left off.
 - **Hands for everything.** Shell, files, web search/fetch, HTTP APIs, email, long-term memory, notifications and follow-up tasks are built in. **Apps come through the Model Context Protocol**: add any MCP server, or a hub like Zapier, Composio or Pipedream to reach thousands of apps through one connection.
-- **You stay in charge.** Every action has a risk level. Reads just happen. Anything that talks to the outside world waits in your *Needs you* inbox, and you get a desktop or phone ping. Turn on *unattended mode* to let the decision model approve on your behalf while you sleep. Destructive actions always wait for you.
+- **You stay in charge.** Every action has a risk level. Reads just happen. Anything that talks to the outside world waits in your *Needs you* inbox, and you get a desktop or phone ping. Approve once, or approve *all* calls of that tool for the rest of the run (handy when a mote is moving 50 files). Turn on *unattended mode* to let the decision model approve on your behalf while you sleep. Destructive actions always wait for you.
 - **A cast of eight.** Pip, Ember, Tide, Nimbus, Byte, Mochi, Pebble and Luna each have a knack and a voice. Any of them can take any goal.
 
 <p align="center"><img src="docs/dashboard.png" alt="The Motes dashboard with an action waiting for approval" width="820"></p>
@@ -47,9 +47,30 @@ motes add "Read my unread email and leave me a summary of what needs a reply" --
 motes add "Check https://mysite.example.com/health and restart the service if it's down" --mote luna --schedule "every 15m"
 motes approvals                 # what's waiting for you
 motes approve <id> --note "ok, but cc me next time"
+motes approve <id> --trust      # ...and every later call of that tool in this run
 ```
 
 More ideas: [examples/goals.md](examples/goals.md).
+
+## Hardware and speed
+
+Each step, the brain reads the goal, its memory and the description of every tool
+it can use (a few thousand tokens), then writes one tool call. Rough speeds:
+
+| Machine | Brain | One step |
+|---------|-------|----------|
+| GPU with 12 GB+ (RTX 3060 and up) | `qwen3:14b` | a few seconds |
+| Apple Silicon, 16 GB+ | `qwen3:8b` | a few seconds |
+| CPU only, 4 cores | `qwen3:4b` (Qwen3-4B-Instruct-2507) | 1–3 minutes |
+
+Motes was tested end to end on the last row: Qwen3-4B on a 4-core CPU with no GPU
+correctly sorted a Downloads folder in 8 real tool calls, in about 40 minutes.
+Slow, but that's the point of an agent that works while you sleep. To speed up a
+CPU machine:
+
+- Expose fewer tools: turn off built-ins you don't use (`tools:`), and give MCP apps an `include:` list.
+- In llama.cpp, turn on flash attention (`-fa on`). Ollama does this automatically where supported.
+- Run Laya as the decision model. It answers in one forward pass instead of generating text.
 
 ## Keep it running while you sleep
 
@@ -86,6 +107,7 @@ mcp_servers:
     env: {API_KEY: "${HOME_API_KEY}"}   # read from the environment
     risk: external                        # default for tools without MCP annotations
     tool_risk: {get_state: read}          # per-tool overrides
+    include: [get_state, set_state]       # optional: expose only these tools (or use exclude:)
   - name: my-hub
     url: https://example.com/mcp          # Streamable HTTP servers
 ```

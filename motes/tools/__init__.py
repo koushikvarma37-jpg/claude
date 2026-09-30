@@ -25,12 +25,14 @@ class Tool:
     parameters: dict
     func: Callable[[dict, ToolContext], str]
     risk: str = "read"
-    # Optional per-call risk, e.g. `ls` is read but `rm` is destructive.
-    risk_fn: Callable[[dict], str] | None = None
+    # Optional per-call risk, e.g. `ls` is read but `rm` is destructive. Called as risk_fn(args, goal).
+    risk_fn: Callable[[dict, dict | None], str] | None = None
     source: str = "builtin"
+    # Output comes from outside (web, files, email, apps) and may carry injected instructions.
+    untrusted: bool = True
 
-    def risk_for(self, args: dict) -> str:
-        risk = self.risk_fn(args) if self.risk_fn else self.risk
+    def risk_for(self, args: dict, goal: dict | None = None) -> str:
+        risk = self.risk_fn(args, goal) if self.risk_fn else self.risk
         return risk if risk in RISK_LEVELS else "destructive"
 
     def spec(self) -> dict:

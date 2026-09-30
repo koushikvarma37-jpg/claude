@@ -135,3 +135,12 @@ def test_rlcd_pairs(tmp_path):
     assert gold["verdict"] == "approve"  # the human label overrides the contrast
     assert json.loads(rows[1]["rejected"][0]["content"])["verdict"] != "approve"
     assert rows[0]["prompt"][0]["role"] == "system"
+
+
+def test_notifications_feed(make_rt):
+    rt = make_rt([say("", call("notify_owner", message="Time to drink water!", title="Water")), say("done")])
+    goal = rt.store.add_goal("Water reminder", "remind me", "luna", "manual")
+    run = rt.store.add_run(goal["id"])
+    rt.agent.run(run["id"])
+    [n] = TestClient(create_app(rt)).get("/api/notifications").json()
+    assert (n["title"], n["message"], n["character"], n["goal"]) == ("Water", "Time to drink water!", "luna", "Water reminder")

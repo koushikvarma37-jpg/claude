@@ -34,6 +34,7 @@ class GoalPatch(BaseModel):
 class DecisionIn(BaseModel):
     approve: bool
     note: str = ""
+    trust_tool: bool = False
 
 
 def create_app(rt: Runtime) -> FastAPI:
@@ -159,6 +160,10 @@ def create_app(rt: Runtime) -> FastAPI:
     def events(limit: int = 100):
         return store.events(limit=limit)
 
+    @app.get("/api/notifications", dependencies=api)
+    def notifications(limit: int = 20):
+        return store.notifications(limit)
+
     @app.get("/api/approvals", dependencies=api)
     def approvals(status: str = "pending"):
         items = store.list_approvals(None if status == "all" else status)
@@ -172,9 +177,15 @@ def create_app(rt: Runtime) -> FastAPI:
 
     @app.post("/api/approvals/{aid}", dependencies=api)
     def decide(aid: str, body: DecisionIn):
-        appr = store.decide_approval(aid, body.approve, body.note) or _404("approval")
-        store.log(appr["run_id"], "approval_decided", approval=aid, approved=body.approve, note=body.note)
+        appr = store.decide_approval(aid, body.approve, body.note, body.trust_tool) or _404("approval")
+        store.log(appr["run_id"], "approval_decided", approval=aid, approved=body.approve, note=body.note,
+                  trusted_tool=body.approve and body.trust_tool)
         run = store.get_run(appr["run_id"])
+        if body.approve and body.trust_tool:
+            # Approve the same tool's other pending calls in this run too.
+            for other in store.list_approvals("pending"):
+                if other["run_id"] == appr["run_id"] and other["tool"] == appr["tool"]:
+                    store.decide_approval(other["id"], True, body.note)
         if run and run["status"] == "waiting_approval" and not store.has_pending_approvals(run["id"]):
             store.update_run(run["id"], status="queued")
         return appr

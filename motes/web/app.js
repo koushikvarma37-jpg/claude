@@ -55,15 +55,18 @@ async function renderApprovals() {
         <pre>${esc(JSON.stringify(a.args, null, 2))}</pre>
         ${a.reason ? `<div class="meta">Decision model: ${esc(a.reason)}</div>` : ""}
         <div class="actions"><input placeholder="note for the mote (optional)" data-note="${esc(a.id)}">
-          <button class="ok" data-approve="${esc(a.id)}">Approve</button><button class="bad" data-deny="${esc(a.id)}">Deny</button></div>
+          <button class="ok" data-approve="${esc(a.id)}">Approve</button>
+          <button data-trust="${esc(a.id)}" title="Approve this and every later ${esc(a.tool)} call in this run">Approve all ${esc(a.tool.split("__").pop())} this run</button>
+          <button class="bad" data-deny="${esc(a.id)}">Deny</button></div>
       </div></div>`).join("") : empty("luna", "Nothing needs you. The motes are on it.");
-  const decide = async (id, approve) => {
+  const decide = async (id, approve, trust_tool = false) => {
     const note = document.querySelector(`[data-note="${CSS.escape(id)}"]`).value;
-    await api(`/api/approvals/${id}`, { method: "POST", body: JSON.stringify({ approve, note }) });
+    await api(`/api/approvals/${id}`, { method: "POST", body: JSON.stringify({ approve, note, trust_tool }) });
     refresh();
   };
   document.querySelectorAll("[data-approve]").forEach((b) => b.onclick = () => decide(b.dataset.approve, true));
   document.querySelectorAll("[data-deny]").forEach((b) => b.onclick = () => decide(b.dataset.deny, false));
+  document.querySelectorAll("[data-trust]").forEach((b) => b.onclick = () => decide(b.dataset.trust, true, true));
 }
 
 async function renderActivity() {
@@ -100,7 +103,7 @@ async function renderGoals() {
   $("#tab-goals").innerHTML = goals.length ? goals.map((g) => `
     <div class="card"><img src="${avatar(g.character)}" alt="">
       <div class="body"><div class="title">${esc(g.title)}</div>
-        <div class="meta">${esc(g.schedule)} · next ${g.enabled ? when(g.next_run_at) : "paused"} · id ${esc(g.id)}</div>
+        <div class="meta">${esc(g.schedule)} · next ${g.enabled ? when(g.next_run_at) : "paused"}${g.parent_id ? " · follow-up a mote scheduled" : ""} · id ${esc(g.id)}</div>
         <pre>${esc(g.instructions)}</pre>
         <div class="actions"><button data-run-now="${esc(g.id)}">Run now</button>
           <button data-toggle="${esc(g.id)}" data-on="${g.enabled}">${g.enabled ? "Pause" : "Resume"}</button>
@@ -119,12 +122,20 @@ async function renderTools() {
     <table>${tools.map((t) => `<tr><td>${esc(t.name)}</td><td><span class="risk ${esc(t.risk)}">${esc(t.dynamic_risk ? "varies" : t.risk)}</span></td><td>${esc(t.description)}</td></tr>`).join("")}</table></div>`;
 }
 
+async function renderMessages() {
+  const items = (await api("/api/notifications?limit=5"));
+  $("#inbox").hidden = !items.length;
+  $("#messages").innerHTML = items.map((n) => `
+    <div class="msg"><img src="${avatar(n.character)}" alt="">
+      <div><b>${esc(n.title)}</b> ${esc(n.message)}<div class="meta">${esc(n.goal || "")} · ${ago(n.ts)}</div></div></div>`).join("");
+}
+
 const renderers = { approvals: renderApprovals, activity: renderActivity, goals: renderGoals, tools: renderTools };
 
 async function refresh() {
   try {
     const s = await api("/api/status");
-    renderStatus(s); renderCast(s);
+    renderStatus(s); renderCast(s); await renderMessages();
     if (tab !== "tools") await renderers[tab]();
   } catch (e) {
     $("#status").textContent = e.message === "missing or wrong token" ? "Open this page with ?token=YOUR_TOKEN" : `offline: ${e.message}`;

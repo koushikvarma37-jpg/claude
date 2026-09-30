@@ -62,6 +62,11 @@ button.ok { background: var(--ok); color: #fff; } button.bad { background: trans
 .risk { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; background: var(--chip); }
 .risk.read { color: var(--ok); } .risk.write { color: var(--accent); } .risk.external { color: var(--warn); } .risk.destructive { color: var(--bad); }
 .s-done { color: var(--ok); } .s-failed { color: var(--bad); } .s-running { color: var(--accent); } .s-waiting_approval { color: var(--warn); }
+.msg { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.msg:last-child { border-bottom: 0; }
+.msg img { width: 32px; height: 32px; flex: 0 0 auto; }
+.msg b { font-size: 14px; }
+.msg .meta { color: var(--muted); font-size: 12px; }
 .empty { color: var(--muted); text-align: center; padding: 30px; }
 .empty img { width: 70px; opacity: .9; display: block; margin: 0 auto 6px; }
 

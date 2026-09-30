@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS goals (
   schedule TEXT NOT NULL DEFAULT 'once',
   next_run_at REAL,
   enabled INTEGER NOT NULL DEFAULT 1,
-  created_at REAL NOT NULL
+  created_at REAL NOT NULL,
+  parent_id TEXT
 );
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
@@ -70,6 +71,11 @@ CREATE TABLE IF NOT EXISTS decisions (
   human_verdict TEXT,
   ts REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trusted_tools (
+  run_id TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  PRIMARY KEY (run_id, tool)
+);
 CREATE TABLE IF NOT EXISTS memory (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -78,6 +84,14 @@ CREATE TABLE IF NOT EXISTS memory (
 """
 
 ACTIVE = ("queued", "running", "waiting_approval")
+
+# Columns added after 0.1.0's first release: (table, column, definition).
+MIGRATIONS = [
+    ("goals", "parent_id", "TEXT"),
+    ("runs", "context", "TEXT"),
+    ("runs", "retries", "INTEGER NOT NULL DEFAULT 0"),
+    ("runs", "not_before", "REAL"),
+]
 
 
 def _id() -> str:
@@ -95,6 +109,10 @@ class Store:
         self._lock = threading.RLock()
         with self._lock:
             self._db.executescript(SCHEMA)
+            for table, column, definition in MIGRATIONS:
+                have = {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def _q(self, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         with self._lock:
@@ -105,12 +123,14 @@ class Store:
             return self._db.execute(sql, params).rowcount
 
     # goals ---------------------------------------------------------------
-    def add_goal(self, title: str, instructions: str, character: str,
-                 schedule: str = "once", next_run_at: float | None = None) -> dict:
+    def add_goal(self, title: str, instructions: str, character: str, schedule: str = "once",
+                 next_run_at: float | None = None, parent_id: str | None = None) -> dict:
+        """`parent_id` is set when a mote scheduled this goal as a follow-up of another one."""
         gid = _id()
         self._x(
-            "INSERT INTO goals VALUES (?,?,?,?,?,?,1,?)",
-            (gid, title, instructions, character, schedule, next_run_at, time.time()),
+            "INSERT INTO goals (id, title, instructions, character, schedule, next_run_at, enabled, created_at, parent_id)"
+            " VALUES (?,?,?,?,?,?,1,?,?)",
+            (gid, title, instructions, character, schedule, next_run_at, time.time(), parent_id),
         )
         return self.get_goal(gid)
 
@@ -127,6 +147,12 @@ class Store:
             self._x(f"UPDATE goals SET {cols} WHERE id=?", (*fields.values(), gid))
 
     def delete_goal(self, gid: str) -> None:
+        """Deleting a goal also stops its unfinished runs and withdraws their approval requests."""
+        marks = ",".join("?" * len(ACTIVE))
+        self._x(f"UPDATE runs SET status='cancelled', result='goal was deleted', updated_at=? "
+                f"WHERE goal_id=? AND status IN ({marks})", (time.time(), gid, *ACTIVE))
+        self._x("UPDATE approvals SET status='denied', note='goal was deleted', decided_at=? "
+                "WHERE status='pending' AND run_id IN (SELECT id FROM runs WHERE goal_id=?)", (time.time(), gid))
         self._x("DELETE FROM goals WHERE id=?", (gid,))
 
     def due_goals(self, now: float) -> list[dict]:
@@ -199,6 +225,16 @@ class Store:
             (run_id, time.time(), kind, json.dumps(data, default=str)),
         )
 
+    def notifications(self, limit: int = 20) -> list[dict]:
+        """Messages motes sent the owner, newest first, with who sent them."""
+        rows = self._q(
+            "SELECT e.id, e.ts, e.data, g.character, g.title AS goal FROM events e "
+            "LEFT JOIN runs r ON r.id = e.run_id LEFT JOIN goals g ON g.id = r.goal_id "
+            "WHERE e.kind='notify' ORDER BY e.id DESC LIMIT ?", (limit,))
+        for r in rows:
+            r.update(json.loads(r.pop("data")))
+        return rows
+
     def events(self, run_id: str | None = None, limit: int = 200) -> list[dict]:
         if run_id:
             rows = self._q("SELECT * FROM events WHERE run_id=? ORDER BY id LIMIT ?", (run_id, limit))
@@ -236,13 +272,16 @@ class Store:
             rows = self._q("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 200")
         return [self._approval(r) for r in rows]
 
-    def decide_approval(self, aid: str, approved: bool, note: str = "") -> dict | None:
+    def decide_approval(self, aid: str, approved: bool, note: str = "", trust_tool: bool = False) -> dict | None:
+        """`trust_tool`: also approve every later call of this tool in the same run."""
         status = "approved" if approved else "denied"
         changed = self._x(
             "UPDATE approvals SET status=?, note=?, decided_at=? WHERE id=? AND status='pending'",
             (status, note, time.time(), aid),
         )
         appr = self.get_approval(aid)
+        if changed and appr and approved and trust_tool:
+            self._x("INSERT OR IGNORE INTO trusted_tools VALUES (?,?)", (appr["run_id"], appr["tool"]))
         if changed and appr:
             # Human answers become gold labels for training the decision model.
             self._x(
@@ -250,6 +289,9 @@ class Store:
                 (status, appr["run_id"], appr["tool"], json.dumps(appr["args"])),
             )
         return appr
+
+    def is_trusted(self, run_id: str, tool: str) -> bool:
+        return bool(self._q("SELECT 1 FROM trusted_tools WHERE run_id=? AND tool=?", (run_id, tool)))
 
     @staticmethod
     def _approval(row: dict) -> dict:
