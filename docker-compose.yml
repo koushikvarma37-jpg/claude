@@ -1,7 +1,6 @@
-# Everything in one go: Ollama (the models) + Motes (the agents).
+# Everything in one go: Ollama (the brain), Laya (the decision model) and Motes (the agents).
 #   docker compose up -d
 #   docker compose exec ollama ollama pull qwen3:14b
-#   docker compose exec ollama ollama pull qwen3:4b
 #   open http://localhost:7777
 # For NVIDIA GPUs, uncomment the deploy block.
 services:
@@ -14,9 +13,18 @@ services:
     #     reservations:
     #       devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
 
+  laya:
+    build: deploy/laya
+    environment:
+      LAYA_PRELOAD: "1"
+      LAYA_MODELS: "english,multilingual"
+      # LAYA_API_KEY: set the same value in .env for Motes (it reads LAYA_API_KEY)
+    volumes: [laya:/root/.cache/huggingface]
+    restart: unless-stopped
+
   motes:
     build: .
-    depends_on: [ollama]
+    depends_on: [ollama, laya]
     ports: ["127.0.0.1:7777:7777"]
     volumes:
       - motes:/data
@@ -26,4 +34,5 @@ services:
 
 volumes:
   ollama:
+  laya:
   motes:

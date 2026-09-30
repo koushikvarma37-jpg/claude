@@ -5,7 +5,7 @@
 #   journalctl --user -u motes -f           # logs
 [Unit]
 Description=Motes - always-on personal agents
-After=network-online.target
+After=network-online.target laya.service
 Wants=network-online.target
 
 [Service]

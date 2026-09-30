@@ -71,7 +71,7 @@ def create_app(rt: Runtime) -> FastAPI:
                 by_char[goal["character"]] = run["status"]
         return {
             "brain": rt.cfg["brain"]["model"],
-            "decision": rt.cfg["decision"]["model"] if rt.cfg["decision"].get("enabled", True) else None,
+            "decision": _decider_name(rt.cfg["decision"]),
             "unattended": bool(rt.cfg["autonomy"].get("unattended")),
             "tools": len(rt.registry),
             "apps": [c.name for c in rt.mcp_clients],
@@ -184,6 +184,15 @@ def create_app(rt: Runtime) -> FastAPI:
         return store.recall(q, 200)
 
     return app
+
+
+def _decider_name(dcfg: dict) -> str | None:
+    if not dcfg.get("enabled", True):
+        return None
+    if dcfg.get("engine", "laya") == "laya":
+        lcfg = dcfg.get("laya", {})
+        return f"Laya {lcfg.get('model') or 'auto'}" + (" (fine-tuned)" if lcfg.get("checkpoint") else "")
+    return dcfg.get("llm", {}).get("model")
 
 
 def _404(what: str):

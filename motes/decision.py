@@ -1,9 +1,8 @@
 """The decision model: a second, independent model that judges each action.
 
-The brain proposes, the decider disposes. Motes ships a prompted judge that
-works with any instruction model, and `motes rlcd build` turns its logged
-judgements (plus your own approve/deny answers) into preference data for
-fine-tuning a dedicated decider with RLCD. See training/README.md.
+The brain proposes, the decider disposes. The default engine is Laya
+(laya_decider.py). This module holds the shared Verdict type and the
+alternative engine: a prompted judge that works with any chat model.
 """
 
 from __future__ import annotations
@@ -60,11 +59,15 @@ class DecisionModel:
         self.client = client
 
     @classmethod
-    def from_config(cls, cfg: dict) -> "DecisionModel | None":
+    def from_config(cls, cfg: dict):
+        """The configured decision engine: Laya (default), a chat-model judge, or None."""
         dcfg = cfg.get("decision", {})
         if not dcfg.get("enabled", True):
             return None
-        return cls(ChatClient(**{**dcfg, "native_tools": False, "temperature": 0.0}))
+        if dcfg.get("engine", "laya") == "laya":
+            from .laya_decider import LayaDecider
+            return LayaDecider.from_config(dcfg.get("laya", {}))
+        return cls(ChatClient(**{**dcfg.get("llm", {}), "native_tools": False, "temperature": 0.0}))
 
     def evaluate(self, goal: str, tool: str, args: dict, risk: str, recent: str = "") -> Verdict:
         try:

@@ -15,15 +15,40 @@ brain:
   native_tools: true
   timeout_seconds: 300
 
-# The decision model: a separate (usually smaller) model that judges every
-# action before it runs. Fine-tune it with `motes rlcd build` + training/train_dpo.py.
+# The decision model: judges every risky action before it runs.
 decision:
   enabled: true
-  base_url: http://localhost:11434/v1
-  model: qwen3:4b
-  api_key: local
+  # laya: Laya, a System-1 decision engine (https://github.com/NandhaKishorM/laya).
+  #       Calibrated probabilities in one forward pass, 100+ languages. Recommended.
+  # llm:  a prompted chat model acting as judge (any model on an OpenAI-compatible server).
+  engine: laya
   # Minimum confidence for the decision model to approve on your behalf.
   min_confidence: 0.8
+  laya:
+    # http:  talk to `laya-serve` (pip install "laya[serve]" && laya-serve)
+    # local: load Laya inside Motes (pip install "motes[laya]")
+    mode: http
+    url: http://localhost:8000
+    api_key_env: LAYA_API_KEY
+    # english | multilingual | typed-decisions. Empty = Laya picks by language.
+    model: ""
+    # local mode: path or Hugging Face id of your own fine-tuned checkpoint.
+    checkpoint: ""
+    device: ""
+    # Token budget per decision (0 = checkpoint default). Multilingual reads up to 8192.
+    max_len: 0
+    # Ask the verdict under every option order and average (cancels position bias).
+    rotate_options: true
+    # Deny outright when P(action follows injected instructions) reaches this.
+    injection_threshold: 0.5
+    # Turn an "approve" into "ask me" when P(serves the goal) falls below on_goal_floor
+    # or P(hard to undo) reaches irreversible_ceiling.
+    on_goal_floor: 0.5
+    irreversible_ceiling: 0.5
+  llm:
+    base_url: http://localhost:11434/v1
+    model: qwen3:4b
+    api_key: local
 
 # Risk levels, lowest to highest: read < write < external < destructive
 #   read        looks at things (read a file, fetch a page, list mail)

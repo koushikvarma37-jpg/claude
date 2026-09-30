@@ -26,6 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 notify = ["apprise>=1.7"]
+# Run Laya inside Motes (decision.laya.mode: local). Pulls in PyTorch.
+laya = ["laya>=0.3.21"]
 train = ["torch", "transformers", "trl>=0.9", "peft", "datasets"]
 dev = ["pytest>=8"]
 

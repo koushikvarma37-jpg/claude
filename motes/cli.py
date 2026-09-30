@@ -33,30 +33,53 @@ def cmd_init(a) -> None:
     path = config.init(force=a.force)
     print(f"config: {path}")
     print("Next: install Ollama (https://ollama.com), then\n"
-          "  ollama pull qwen3:14b && ollama pull qwen3:4b\n"
+          "  ollama pull qwen3:14b                          # the brain\n"
+          "  pip install \"laya[serve]\" && laya-serve        # the decision model\n"
           "  motes doctor\n  motes up")
+
+
+def _check_openai(role: str, c: dict) -> bool:
+    try:
+        r = httpx.get(c["base_url"].rstrip("/") + "/models",
+                      headers={"Authorization": f"Bearer {c.get('api_key', 'local')}"}, timeout=10)
+        r.raise_for_status()
+        names = {m.get("id") for m in r.json().get("data", [])}
+        found = c["model"] in names or not names
+        print(f"{role}: {c['base_url']} reachable; model {c['model']} "
+              f"{'found' if found else 'NOT FOUND (available: ' + ', '.join(sorted(names)[:8]) + ')'}")
+        return found
+    except Exception as exc:
+        print(f"{role}: cannot reach {c['base_url']} ({exc})")
+        return False
+
+
+def _check_laya(lcfg: dict) -> bool:
+    from .laya_decider import LayaDecider
+    where = lcfg.get("url") if lcfg.get("mode", "http") == "http" else f"in-process {lcfg.get('checkpoint') or 'Router'}"
+    try:
+        decider = LayaDecider.from_config(lcfg)
+        decider.backend.health()
+        v = decider.evaluate("Tell me the weather in Lisbon.", "web_search", {"query": "Lisbon weather"}, "read")
+        if v.confidence == 0.0 and "unavailable" in v.reason:
+            raise RuntimeError(v.reason)
+        print(f"decision: Laya at {where} is working (sample decision: {v.reason})")
+        return True
+    except Exception as exc:
+        print(f"decision: Laya at {where} is not reachable ({exc}).\n"
+              "  Start it with:  pip install \"laya[serve]\" && laya-serve")
+        return False
 
 
 def cmd_doctor(a) -> None:
     cfg = config.load()
-    ok = True
-    for role in ("brain", "decision"):
-        c = cfg[role]
-        if role == "decision" and not c.get("enabled", True):
-            print("decision: disabled")
-            continue
-        try:
-            r = httpx.get(c["base_url"].rstrip("/") + "/models",
-                          headers={"Authorization": f"Bearer {c.get('api_key', 'local')}"}, timeout=10)
-            r.raise_for_status()
-            names = {m.get("id") for m in r.json().get("data", [])}
-            found = c["model"] in names or not names
-            print(f"{role}: {c['base_url']} reachable; model {c['model']} "
-                  f"{'found' if found else 'NOT FOUND (available: ' + ', '.join(sorted(names)[:8]) + ')'}")
-            ok &= found
-        except Exception as exc:
-            print(f"{role}: cannot reach {c['base_url']} ({exc})")
-            ok = False
+    ok = _check_openai("brain", cfg["brain"])
+    dcfg = cfg["decision"]
+    if not dcfg.get("enabled", True):
+        print("decision: disabled")
+    elif dcfg.get("engine", "laya") == "laya":
+        ok &= _check_laya(dcfg.get("laya", {}))
+    else:
+        ok &= _check_openai("decision", dcfg["llm"])
     for spec in cfg.get("mcp_servers") or []:
         print(f"app: {spec.get('name')} ({'url' if spec.get('url') else spec.get('command')})")
     print("all good" if ok else "fix the items above, then run `motes up`")
@@ -192,7 +215,7 @@ def cmd_rlcd(a) -> None:
     from .rlcd import build_pairs, situations_from_file, situations_from_store, write_jsonl
 
     cfg = config.load()
-    dcfg = cfg["decision"]
+    dcfg = cfg["decision"]["llm"]
     client = ChatClient(**{**dcfg, "model": a.model or dcfg["model"], "native_tools": False})
     sources = list(situations_from_store(_store()))
     seed = Path(a.seed) if a.seed else None
@@ -203,6 +226,23 @@ def cmd_rlcd(a) -> None:
     print(f"building RLCD pairs from {len(sources)} situations with {client.model}...")
     n = write_jsonl(build_pairs(client, sources, skip_ties=not a.keep_ties), Path(a.out))
     print(f"wrote {n} preference pairs to {a.out}. Next: python training/train_dpo.py --data {a.out}")
+
+
+def cmd_laya(a) -> None:
+    if a.action == "check":
+        sys.exit(0 if _check_laya(config.load()["decision"].get("laya", {})) else 1)
+    from .laya_train import labelled_from_file, labelled_from_store, to_rows, write_jsonl
+
+    situations = list(labelled_from_store(_store()))
+    from_you = len(situations)
+    seed = Path(a.seed) if a.seed else None
+    if seed and seed.exists():
+        situations += list(labelled_from_file(seed))
+    if not situations:
+        sys.exit("nothing labelled yet: approve/deny some actions first, or pass --seed training/seed_scenarios.jsonl")
+    n = write_jsonl(to_rows(situations, a.format, augment_order=not a.no_augment), Path(a.out))
+    print(f"wrote {n} Laya {a.format} rows to {a.out} ({from_you} situations from your approvals, "
+          f"{len(situations) - from_you} from the seed file). See training/README.md for fine-tuning.")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -260,7 +300,16 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--builtin-only", action="store_true")
     s.set_defaults(fn=cmd_tools)
 
-    s = sub.add_parser("rlcd", help="build RLCD preference data for the decision model")
+    s = sub.add_parser("laya", help="Laya decision engine: check it, or export your decisions to fine-tune it")
+    s.add_argument("action", choices=["check", "export"])
+    s.add_argument("--out", default="data/laya-train.jsonl")
+    s.add_argument("--format", default="train", choices=["train", "eval"],
+                   help="train: Laya fine-tuning rows (gold); eval: laya-evals rows (expected)")
+    s.add_argument("--seed", default="training/seed_scenarios.jsonl")
+    s.add_argument("--no-augment", action="store_true", help="don't add option-order rotations")
+    s.set_defaults(fn=cmd_laya)
+
+    s = sub.add_parser("rlcd", help="(llm engine) build contrastive preference pairs for a chat-model judge")
     s.add_argument("action", choices=["build"])
     s.add_argument("--out", default="data/rlcd.jsonl")
     s.add_argument("--seed", default="training/seed_scenarios.jsonl")

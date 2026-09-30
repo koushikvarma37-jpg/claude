@@ -13,7 +13,7 @@ tools (shell, files, web, email, and hundreds of apps through MCP) and check
 with you before doing anything that matters.
 
 - **Your models.** Any OpenAI-compatible server: Ollama, LM Studio, vLLM, llama.cpp. No cloud API needed.
-- **Two minds.** A *brain* model plans and acts. A separate *decision model* judges every risky action before it runs. You can fine-tune the decision model on your own approvals with RLCD.
+- **Two minds.** A *brain* (any open chat model) plans and acts. [**Laya**](https://github.com/NandhaKishorM/laya), a non-autoregressive System-1 decision engine, judges every risky action before it runs: calibrated probabilities in one forward pass, in 100+ languages. You can fine-tune it on your own approvals with Laya's RLCD training recipe.
 - **Always on.** Goals run on schedules (`daily 07:00`, `every 15m`, cron) or from webhooks. Runs save after every step, so they survive restarts, sleep and reboots, and pick up where they left off.
 - **Hands for everything.** Shell, files, web search/fetch, HTTP APIs, email, long-term memory, notifications and follow-up tasks are built in. **Apps come through the Model Context Protocol**: add any MCP server, or a hub like Zapier, Composio or Pipedream to reach thousands of apps through one connection.
 - **You stay in charge.** Every action has a risk level. Reads just happen. Anything that talks to the outside world waits in your *Needs you* inbox, and you get a desktop or phone ping. Turn on *unattended mode* to let the decision model approve on your behalf while you sleep. Destructive actions always wait for you.
@@ -24,18 +24,21 @@ with you before doing anything that matters.
 ## Quick start
 
 ```bash
-# 1. Models (https://ollama.com)
-ollama pull qwen3:14b     # the brain
-ollama pull qwen3:4b      # the decision model
+# 1. The brain (https://ollama.com)
+ollama pull qwen3:14b
 
-# 2. Motes
+# 2. The decision model: Laya (https://github.com/NandhaKishorM/laya)
+pip install "laya[serve]"
+laya-serve                # serves on :8000, downloads its checkpoints on first use
+
+# 3. Motes
 pip install git+https://github.com/<you>/motes    # or: git clone ... && pip install -e .
 motes init            # writes ~/.motes/config.yaml
-motes doctor          # checks the models are reachable
+motes doctor          # checks the brain and Laya are reachable
 motes up              # daemon + dashboard at http://localhost:7777
 ```
 
-Or with Docker (Ollama included): `docker compose up -d`, then pull the models (see `docker-compose.yml`).
+Or with Docker (Ollama and Laya included): `docker compose up -d`, then pull the brain model (see `docker-compose.yml`).
 
 Give a mote a goal in the dashboard, or from the terminal:
 
@@ -54,7 +57,7 @@ More ideas: [examples/goals.md](examples/goals.md).
 
 | OS | How |
 |----|-----|
-| Linux | `deploy/systemd/motes.service` (instructions inside; `loginctl enable-linger` keeps it running when logged out) |
+| Linux | `deploy/systemd/laya.service` + `deploy/systemd/motes.service` (instructions inside; `loginctl enable-linger` keeps them running when logged out) |
 | macOS | `deploy/macos/com.motes.agent.plist` (wraps Motes in `caffeinate` so the Mac stays awake while it's running) |
 | Windows | `deploy\windows\install-task.ps1` |
 | Server / NAS | `docker compose up -d` |
@@ -99,26 +102,45 @@ goal ─► brain (open LLM) ─► wants to call a tool
                                ▼
                ┌──────── decision gate ────────┐
    read ───────┤ run                           │
-   write ──────┤ decision model may veto       │
+   write ──────┤ Laya may veto                 │
    external ───┤ ask you  (or, in unattended   │
-               │ mode, the decision model may  │
-               │ approve if it's confident)    │
+               │ mode, Laya may approve if     │
+               │ it's confident)               │
    destructive ┤ always ask you                │
                └───────────────────────────────┘
 ```
 
-All of this is configurable under `autonomy:` in the config. Every judgement the
-decision model makes is logged, and every approve or deny you press is saved as a
-label.
+For each action, Motes sends Laya the goal, recent activity, the tool, its
+arguments and the risk level. Laya answers four typed questions in one forward pass:
 
-### Train your own decision model (RLCD)
+| question | type | used for |
+|----------|------|----------|
+| verdict | choice: approve / deny / ask_human | the decision and its confidence |
+| on_goal | noul (probability of yes) | an approve that may not serve the goal becomes "ask me" |
+| injected | noul | following instructions planted in a web page or email means **deny** |
+| irreversible | noul | an approve that is hard to undo becomes "ask me" |
 
-`motes rlcd build` turns those logs into preference pairs with
-[RLCD](https://arxiv.org/abs/2307.12950) (Reinforcement Learning from Contrastive
-Distillation). The same model judges each situation under a *careful* prompt and a
-*careless* prompt; the careful answer is preferred. Wherever you gave a real
-answer, yours wins. `training/train_dpo.py` then fine-tunes a small open model on
-the pairs with DPO + LoRA, and you serve it through Ollama. Details:
+The verdict is asked under every option order and averaged, which cancels the
+option-position bias Laya's authors measured. If Laya is unreachable, every
+risky action waits for you. The dashboard shows Laya's reasoning on each
+approval card (e.g. `Laya: ask_human 71% · on-goal 88% · injected 4% · irreversible 62%`).
+
+Want a chat model as the judge instead? Set `decision.engine: llm`.
+
+### Teach Laya your taste
+
+Laya's shipped checkpoints are a base to specialise. Its authors report
+fine-tuning lifting accuracy from about 0.36 to 0.77 on their decision
+benchmark. Every approve and deny you press is saved as a label, and
+
+```bash
+motes laya export --out data/laya-train.jsonl
+```
+
+writes them (plus 24 starter scenarios) in Laya's training format:
+`state` + `questions` + `gold` target probabilities. Train with Laya's RLCD
+recipe (proper-scoring-rule rewards, then temperature calibration), then point
+`decision.laya.checkpoint` at the result. Walkthrough:
 [training/README.md](training/README.md).
 
 ## Security notes
@@ -133,11 +155,13 @@ the pairs with DPO + LoRA, and you serve it through Ollama. Details:
 ```
 motes/
   agent.py       the loop: think → gate → act → save, resumable
-  decision.py    the decision model (judge prompt + verdict parsing)
+  laya_decider.py  Laya as the decision model (questions, rotation averaging, gating)
+  laya_train.py  export your approvals as Laya fine-tuning / eval data
+  decision.py    verdict type + the alternative chat-model judge
   daemon.py      always-on scheduler, crash recovery, worker pool
   llm.py         OpenAI-compatible client + text protocol for models without tool calling
   tools/         built-in tools and the MCP client (stdio + Streamable HTTP)
-  rlcd.py        RLCD preference-pair builder
+  rlcd.py        contrastive preference pairs for the chat-model judge
   server.py      dashboard API + webhooks
   web/           dashboard and the eight avatars (SVG)
 training/        seed scenarios, DPO training script, guide
@@ -151,10 +175,12 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The tests use scripted fake models and a fake MCP server, so they need no GPU or network.
+The tests use scripted fake models and a fake MCP server, so they need no GPU or network. With
+`pip install --no-deps laya` they also check Motes' requests against Laya's real HTTP server code.
 
 ## License
 
 MIT. The characters in `motes/web/avatars/` are original artwork released under the same license.
 
+Laya is a separate project by its own authors under the Apache-2.0 license; Motes talks to it over its public API.
 Motes is an independent open-source project and is not affiliated with any AI company.

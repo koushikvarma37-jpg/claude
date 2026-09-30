@@ -3,8 +3,9 @@ brain:
   base_url: http://ollama:11434/v1
   model: qwen3:14b
 decision:
-  base_url: http://ollama:11434/v1
-  model: qwen3:4b
+  engine: laya
+  laya:
+    url: http://laya:8000
 server:
   host: 0.0.0.0
 notify:
