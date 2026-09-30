@@ -137,7 +137,10 @@ def test_injection_is_denied_even_in_unattended_mode(make_rt):
 
 
 def test_default_engine_is_laya(cfg):
-    from motes.decision import DecisionModel
+    from motes.decision import DecisionModel, DualProcess
+    d = DecisionModel.from_config(cfg)
+    assert isinstance(d, DualProcess) and isinstance(d.system1, LayaDecider)
+    cfg["decision"]["system2"]["enabled"] = False
     assert isinstance(DecisionModel.from_config(cfg), LayaDecider)
     cfg["decision"]["engine"] = "llm"
     assert isinstance(DecisionModel.from_config(cfg), DecisionModel)
@@ -194,3 +197,45 @@ def test_real_laya_server_accepts_motes_requests(monkeypatch):
     assert isinstance(state, str) and "Ping the hook" in state
     assert set(questions) == {"verdict_0", "verdict_1", "verdict_2", *SIGNALS}
     assert stub.kwargs == {"max_len": 4096}
+
+
+class Judge:
+    def __init__(self, verdict="approve"):
+        self.calls = 0
+        self.verdict = verdict
+
+    def evaluate(self, *a, **k):
+        from motes.decision import Verdict
+        self.calls += 1
+        return Verdict(self.verdict, 0.9, "thought it through")
+
+
+def test_system1_decides_when_confident_system2_only_when_unsure():
+    from motes.decision import DualProcess
+    sig = {"on_goal": 0.9, "injected": 0.02, "irreversible": 0.05}
+    judge = Judge()
+    sure = DualProcess(LayaDecider(StubLaya({"approve": 4.0, "deny": 0.0, "ask_human": 0.0}, sig)), judge)
+    v = sure.evaluate("g", "write_file", {}, "write")
+    assert v.verdict == "approve" and v.reason.startswith("System 1") and judge.calls == 0
+
+    unsure = DualProcess(LayaDecider(StubLaya({"approve": 0.2, "deny": 0.0, "ask_human": 0.1}, sig)), judge)
+    v = unsure.evaluate("g", "write_file", {}, "write")
+    assert v.reason.startswith("System 2") and "System 1 unsure" in v.reason and judge.calls == 1
+
+
+def test_system2_cannot_overrule_an_injection_flag():
+    from motes.decision import DualProcess
+    stub = StubLaya({"approve": 0.0, "deny": 0.0, "ask_human": 0.0}, {"on_goal": 0.9, "injected": 0.6})
+    judge = Judge("approve")
+    v = DualProcess(LayaDecider(stub), judge, below=0.99).evaluate("g", "http_request", {}, "external")
+    assert v.verdict == "deny" and judge.calls == 0
+
+
+def test_laya_down_falls_back_to_system2():
+    from motes.decision import DualProcess
+    class Down:
+        def predict(self, *a):
+            raise ConnectionError("refused")
+    judge = Judge()
+    v = DualProcess(LayaDecider(Down()), judge).evaluate("g", "write_file", {}, "write")
+    assert v.reason.startswith("System 2") and judge.calls == 1

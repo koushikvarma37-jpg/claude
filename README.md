@@ -147,7 +147,18 @@ option-position bias Laya's authors measured. If Laya is unreachable, every
 risky action waits for you. The dashboard shows Laya's reasoning on each
 approval card (e.g. `Laya: ask_human 71% · on-goal 88% · injected 4% · irreversible 62%`).
 
-Want a chat model as the judge instead? Set `decision.engine: llm`.
+### System 1 and System 2
+
+Laya is **System 1**: it answers every decision instantly, in one forward pass,
+with a calibrated confidence. A confident answer (at least `decision.system2.below`,
+default 0.8) is final. When Laya is unsure, or unreachable, Motes escalates to
+**System 2**: the chat model under `decision.llm` reasons through the same
+situation step by step. System 2 can settle a doubt but can never overrule a
+System 1 injection flag, and anything still unresolved comes to you. Every
+decision in the dashboard is labelled `System 1 ·` or `System 2 ·`, so you can
+see which mind made it.
+
+Set `decision.system2.enabled: false` for Laya alone, or `decision.engine: llm` for a chat model alone.
 
 ### Teach Laya your taste
 

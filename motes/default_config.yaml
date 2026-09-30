@@ -45,6 +45,12 @@ decision:
     # or P(hard to undo) reaches irreversible_ceiling.
     on_goal_floor: 0.5
     irreversible_ceiling: 0.5
+  # Laya is System 1 and answers every decision. When its confidence is below `below`
+  # (or Laya is unreachable), System 2 thinks it through with the chat model below.
+  system2:
+    enabled: true
+    below: 0.8
+  # The chat model for System 2 (or the only judge, with engine: llm).
   llm:
     base_url: http://localhost:11434/v1
     model: qwen3:4b

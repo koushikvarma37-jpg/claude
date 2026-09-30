@@ -202,7 +202,10 @@ def _decider_name(dcfg: dict) -> str | None:
         return None
     if dcfg.get("engine", "laya") == "laya":
         lcfg = dcfg.get("laya", {})
-        return f"Laya {lcfg.get('model') or 'auto'}" + (" (fine-tuned)" if lcfg.get("checkpoint") else "")
+        name = f"Laya {lcfg.get('model') or 'auto'}" + (" (fine-tuned)" if lcfg.get("checkpoint") else "")
+        if dcfg.get("system2", {}).get("enabled", True):
+            name += f" + System 2 {dcfg.get('llm', {}).get('model', '')}"
+        return name
     return dcfg.get("llm", {}).get("model")
 
 
