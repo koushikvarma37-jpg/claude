@@ -1,0 +1,29 @@
+# Everything in one go: Ollama (the models) + Motes (the agents).
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen3:14b
+#   docker compose exec ollama ollama pull qwen3:4b
+#   open http://localhost:7777
+# For NVIDIA GPUs, uncomment the deploy block.
+services:
+  ollama:
+    image: ollama/ollama
+    volumes: [ollama:/root/.ollama]
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+
+  motes:
+    build: .
+    depends_on: [ollama]
+    ports: ["127.0.0.1:7777:7777"]
+    volumes:
+      - motes:/data
+      - ./examples/docker-config.yaml:/data/config.yaml
+    env_file: {path: .env, required: false}
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  motes:

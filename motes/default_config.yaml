@@ -1,0 +1,75 @@
+# Motes configuration. Lives at ~/.motes/config.yaml (override with MOTES_HOME).
+
+# The brain: plans and calls tools. Any OpenAI-compatible endpoint works:
+#   Ollama     http://localhost:11434/v1
+#   LM Studio  http://localhost:1234/v1
+#   vLLM       http://localhost:8000/v1
+#   llama.cpp  http://localhost:8080/v1
+brain:
+  base_url: http://localhost:11434/v1
+  model: qwen3:14b
+  api_key: local
+  temperature: 0.3
+  # Set false for models without native function calling; Motes then uses
+  # a text protocol that any instruction-following model can follow.
+  native_tools: true
+  timeout_seconds: 300
+
+# The decision model: a separate (usually smaller) model that judges every
+# action before it runs. Fine-tune it with `motes rlcd build` + training/train_dpo.py.
+decision:
+  enabled: true
+  base_url: http://localhost:11434/v1
+  model: qwen3:4b
+  api_key: local
+  # Minimum confidence for the decision model to approve on your behalf.
+  min_confidence: 0.8
+
+# Risk levels, lowest to highest: read < write < external < destructive
+#   read        looks at things (read a file, fetch a page, list mail)
+#   write       changes local state (write a file, save a note)
+#   external    acts on the world (send an email, post a message, pay)
+#   destructive hard or impossible to undo (delete, force-push, rm -rf)
+autonomy:
+  auto_approve: [read, write]      # runs without asking
+  review: [write]                  # auto-approved, but the decision model can veto
+  # Actions above auto_approve wait in your approvals inbox...
+  # ...unless unattended mode is on, in which case the decision model may approve
+  # `external` actions while you sleep. `destructive` always waits for you.
+  unattended: false
+  max_steps: 40
+
+daemon:
+  tick_seconds: 10
+  concurrency: 3
+
+server:
+  host: 127.0.0.1
+  port: 7777
+  # Required for webhook/API calls when set. Always set this if you expose the port.
+  token: ""
+
+tools:
+  shell: true
+  files: true
+  web: true
+  email: false
+
+# SMTP/IMAP for the email tools (tools.email: true)
+email:
+  smtp_host: ""
+  smtp_port: 587
+  imap_host: ""
+  username: ""
+  password_env: MOTES_EMAIL_PASSWORD
+  from_address: ""
+
+# Where Motes pings you. Apprise URLs cover 100+ services (Telegram, Discord,
+# Slack, ntfy, Signal, email...): https://github.com/caronc/apprise
+notify:
+  desktop: true
+  apprise_urls: []
+
+# Apps via the Model Context Protocol. `motes apps` lists ready-made presets;
+# `motes apps add <name>` copies one here.
+mcp_servers: []

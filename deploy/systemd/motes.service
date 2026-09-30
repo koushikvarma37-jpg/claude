@@ -1,0 +1,20 @@
+# Linux: keep Motes running in the background, across logouts and reboots.
+#   mkdir -p ~/.config/systemd/user && cp deploy/systemd/motes.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now motes
+#   sudo loginctl enable-linger "$USER"     # keep running when you're logged out
+#   journalctl --user -u motes -f           # logs
+[Unit]
+Description=Motes - always-on personal agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/motes up --no-browser
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+# Secrets for apps and email (one KEY=value per line):
+EnvironmentFile=-%h/.motes/env
+
+[Install]
+WantedBy=default.target

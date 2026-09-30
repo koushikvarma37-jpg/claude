@@ -1,0 +1,110 @@
+# App presets. `motes apps` lists them; `motes apps add <name>` copies one into
+# your config. ${VARS} are read from the environment when Motes starts, so
+# secrets stay out of the config file.
+#
+# The "hub" entries are hosted MCP gateways that each expose hundreds to
+# thousands of apps (Gmail, Google Calendar, Sheets, HubSpot, Jira, Trello,
+# Shopify...) through one connection. Create a free account with the hub,
+# connect the apps you want there, and paste its MCP URL into the env var.
+# Any other MCP server (thousands are listed at https://github.com/modelcontextprotocol/servers
+# and https://mcp.so) works the same way.
+
+# --- hubs: one connection, many apps ---------------------------------------
+zapier:
+  about: "Zapier MCP: thousands of apps. Get your URL at https://mcp.zapier.com"
+  url: ${ZAPIER_MCP_URL}
+  risk: external
+
+composio:
+  about: "Composio: hundreds of apps with managed OAuth. Get your URL at https://composio.dev"
+  url: ${COMPOSIO_MCP_URL}
+  risk: external
+
+pipedream:
+  about: "Pipedream MCP: thousands of APIs. See https://pipedream.com/docs/connect/mcp"
+  url: ${PIPEDREAM_MCP_URL}
+  risk: external
+
+# --- local, no account needed ----------------------------------------------
+filesystem:
+  about: "Files under your home folder (official reference server)"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}"]
+  risk: write
+
+browser:
+  about: "Drive a real browser: click, type, fill forms on any website (Microsoft Playwright MCP)"
+  command: npx
+  args: ["-y", "@playwright/mcp@latest"]
+  risk: external
+
+fetch:
+  about: "Fetch web pages as markdown"
+  command: uvx
+  args: ["mcp-server-fetch"]
+  risk: read
+
+git:
+  about: "Work with local git repositories"
+  command: uvx
+  args: ["mcp-server-git"]
+  risk: write
+
+time:
+  about: "Time zones and conversions"
+  command: uvx
+  args: ["mcp-server-time"]
+  risk: read
+
+knowledge-graph:
+  about: "A knowledge-graph memory the motes can build over time"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-memory"]
+  risk: write
+
+# --- apps that need a key --------------------------------------------------
+github:
+  about: "GitHub issues, PRs, code, Actions (official GitHub server; needs Docker + GITHUB_PERSONAL_ACCESS_TOKEN)"
+  command: docker
+  args: ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+  risk: external
+
+slack:
+  about: "Read channels, post messages (needs SLACK_BOT_TOKEN and SLACK_TEAM_ID)"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-slack"]
+  env: {SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}", SLACK_TEAM_ID: "${SLACK_TEAM_ID}"}
+  risk: external
+
+notion:
+  about: "Notion pages and databases (needs NOTION_TOKEN)"
+  command: npx
+  args: ["-y", "@notionhq/notion-mcp-server"]
+  env: {NOTION_TOKEN: "${NOTION_TOKEN}"}
+  risk: external
+
+brave-search:
+  about: "Web search via Brave (needs BRAVE_API_KEY)"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  env: {BRAVE_API_KEY: "${BRAVE_API_KEY}"}
+  risk: read
+
+google-maps:
+  about: "Places, directions, travel times (needs GOOGLE_MAPS_API_KEY)"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-google-maps"]
+  env: {GOOGLE_MAPS_API_KEY: "${GOOGLE_MAPS_API_KEY}"}
+  risk: read
+
+postgres:
+  about: "Read-only SQL on a Postgres database (needs DATABASE_URL)"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+  risk: read
+
+stripe:
+  about: "Stripe payments, customers, invoices (needs STRIPE_SECRET_KEY)"
+  command: npx
+  args: ["-y", "@stripe/mcp", "--tools=all", "--api-key=${STRIPE_SECRET_KEY}"]
+  risk: external

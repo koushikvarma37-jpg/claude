@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Mochi">
+<title>Mochi</title>
+<style>
+.eyes{transform-box:fill-box;transform-origin:center;animation:blink 5.2s infinite}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.1)}}
+</style>
+<defs><radialGradient id="b" cx="38%" cy="25%" r="75%"><stop offset="0" stop-color="#fff4f7"/><stop offset="1" stop-color="#ffa8c3"/></radialGradient></defs>
+<ellipse cx="64" cy="118" rx="40" ry="4.5" fill="#1a1530" opacity=".14"/>
+<g><animateTransform attributeName="transform" type="scale" values="1 1;1.03 .97;1 1" dur="2.4s" repeatCount="indefinite" additive="sum"/>
+<path d="M16 90 C16 64 38 50 64 50 C90 50 112 64 112 90 C112 108 92 114 64 114 C36 114 16 108 16 90Z" fill="url(#b)" transform="translate(0 0)"/>
+</g>
+<path d="M78 46 C82 36 92 34 96 40 C92 42 90 46 90 50 C86 46 82 46 78 46Z" fill="#ff6f9c"/>
+<path d="M78 46 C84 42 90 42 96 40" stroke="#e24d80" stroke-width="1.2" fill="none"/>
+<ellipse cx="42" cy="66" rx="12" ry="5" fill="#fff" opacity=".7" transform="rotate(-15 42 66)"/>
+<g class="eyes">
+  <ellipse cx="49" cy="84" rx="5" ry="6.5" fill="#2b2440"/><ellipse cx="79" cy="84" rx="5" ry="6.5" fill="#2b2440"/>
+  <circle cx="50.6" cy="81.4" r="2" fill="#fff"/><circle cx="80.6" cy="81.4" r="2" fill="#fff"/>
+</g>
+<ellipse cx="41" cy="93" rx="6" ry="3.5" fill="#ff6f9c" opacity=".55"/><ellipse cx="87" cy="93" rx="6" ry="3.5" fill="#ff6f9c" opacity=".55"/>
+<path d="M57 95 Q60.5 99 64 95 Q67.5 99 71 95" stroke="#2b2440" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+</svg>

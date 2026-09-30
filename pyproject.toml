@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motes"
+version = "0.1.0"
+description = "Open-source, always-on personal agents that run on your own machine with open models."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Motes contributors" }]
+keywords = ["agents", "llm", "ollama", "mcp", "automation", "local-first"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "httpx>=0.25",
+  "pyyaml>=6",
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "croniter>=2",
+]
+
+[project.optional-dependencies]
+notify = ["apprise>=1.7"]
+train = ["torch", "transformers", "trl>=0.9", "peft", "datasets"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+motes = "motes.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["motes*"]
+
+[tool.setuptools.package-data]
+motes = ["web/*", "web/avatars/*", "catalog.yaml", "default_config.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

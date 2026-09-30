@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motes</title>
+<link rel="icon" href="/static/avatars/pip.svg">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img src="/static/avatars/pip.svg" alt=""><span>motes</span></div>
+  <div id="status" class="status"></div>
+</header>
+
+<section class="cast" id="cast"></section>
+
+<main>
+  <section class="panel compose">
+    <h2>Give a mote a goal</h2>
+    <form id="goal-form">
+      <textarea id="g-text" rows="3" required
+        placeholder="e.g. Every morning at 7, read my unread email and leave me a summary of what needs a reply."></textarea>
+      <div class="row">
+        <label>Who <select id="g-char"></select></label>
+        <label>When <input id="g-sched" value="once" list="scheds"></label>
+        <datalist id="scheds">
+          <option value="once"><option value="every 30m"><option value="every 2h">
+          <option value="daily 07:00"><option value="cron 0 9 * * 1-5"><option value="manual">
+        </datalist>
+        <button type="submit">Start</button>
+      </div>
+      <p class="hint" id="g-err"></p>
+    </form>
+  </section>
+
+  <nav class="tabs">
+    <button data-tab="approvals" class="on">Needs you <span id="badge" class="badge"></span></button>
+    <button data-tab="activity">Activity</button>
+    <button data-tab="goals">Goals</button>
+    <button data-tab="tools">Hands &amp; apps</button>
+  </nav>
+
+  <section id="tab-approvals" class="tab on"></section>
+  <section id="tab-activity" class="tab"></section>
+  <section id="tab-goals" class="tab"></section>
+  <section id="tab-tools" class="tab"></section>
+</main>
+
+<dialog id="run-dialog"><div id="run-body"></div><form method="dialog"><button>Close</button></form></dialog>
+<script src="/static/app.js"></script>
+</body>
+</html>

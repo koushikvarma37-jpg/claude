@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS: start Motes at login and restart it if it stops.
+    sed "s|MOTES_BIN|$(which motes)|; s|HOME_DIR|$HOME|g" deploy/macos/com.motes.agent.plist > ~/Library/LaunchAgents/com.motes.agent.plist
+    launchctl load ~/Library/LaunchAgents/com.motes.agent.plist
+  Motes only works while the Mac is awake. To let it work overnight on power:
+    System Settings > Battery (or Energy) > Options > "Prevent automatic sleeping when the display is off"
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.motes.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>MOTES_BIN</string>
+    <string>up</string>
+    <string>--no-browser</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>HOME_DIR/.motes/motes.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/.motes/motes.log</string>
+</dict>
+</plist>

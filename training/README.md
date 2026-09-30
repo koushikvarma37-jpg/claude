@@ -1,0 +1,54 @@
+# Training your own decision model (RLCD)
+
+Motes uses two models: the brain, which plans and calls tools, and the
+decision model, which judges each action before it runs. Any instruction
+model can be the decision model out of the box. This folder turns it into a
+specialist that is tuned to *your* standards.
+
+## How it works
+
+[RLCD](https://arxiv.org/abs/2307.12950) (Reinforcement Learning from
+Contrastive Distillation) makes preference data without hand labelling:
+
+1. Take a situation: goal + proposed action + risk.
+2. Ask the base model twice: once with a **positive** prompt (careful,
+   protective, but helpful) and once with a **negative** prompt (careless or
+   pointlessly obstructive).
+3. The positive answer is *chosen*, the negative one *rejected*.
+4. Train on those pairs with DPO, which distils the contrast into the model.
+   The trained model behaves like the positive prompt with just the plain
+   prompt.
+
+Motes adds your own history on top: every time you press **Approve** or
+**Deny** in the dashboard, that answer becomes a gold label that overrides the
+synthetic one. So the more you use Motes, the more the decision model learns
+your taste.
+
+## Steps
+
+```bash
+# 1. Build pairs from the decisions Motes logged, plus the cold-start seed set.
+#    Uses the decision model from your config to generate the contrasts.
+motes rlcd build --out data/rlcd.jsonl --seed training/seed_scenarios.jsonl
+
+# 2. Train a LoRA with DPO (needs a GPU; ~16 GB VRAM for a 4B model).
+pip install "motes[train]"
+python training/train_dpo.py --data data/rlcd.jsonl --base Qwen/Qwen3-4B-Instruct-2507 --out out/decider --merge
+
+# 3. Convert to GGUF and serve with Ollama.
+git clone https://github.com/ggml-org/llama.cpp
+python llama.cpp/convert_hf_to_gguf.py out/decider/merged --outfile decider.gguf --outtype q8_0
+printf 'FROM ./decider.gguf\nPARAMETER temperature 0\n' > Modelfile
+ollama create motes-decider -f Modelfile
+
+# 4. Use it.
+#    ~/.motes/config.yaml  ->  decision: { model: motes-decider }
+```
+
+Tips:
+
+- Add your own situations to `seed_scenarios.jsonl`. `label` is optional: with
+  it, the row is a gold example; without it, RLCD decides.
+- `--keep-ties` keeps pairs where both prompts reached the same verdict (they
+  still differ in confidence and reasoning). By default they are dropped.
+- Retrain every few weeks as your approvals pile up.

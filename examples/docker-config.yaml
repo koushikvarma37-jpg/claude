@@ -1,0 +1,11 @@
+# Config for docker-compose: the models live in the `ollama` service.
+brain:
+  base_url: http://ollama:11434/v1
+  model: qwen3:14b
+decision:
+  base_url: http://ollama:11434/v1
+  model: qwen3:4b
+server:
+  host: 0.0.0.0
+notify:
+  desktop: false

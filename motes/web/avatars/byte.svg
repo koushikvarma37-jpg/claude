@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Byte">
+<title>Byte</title>
+<style>
+.eyes{transform-box:fill-box;transform-origin:center;animation:blink 5.2s infinite}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.1)}}
+</style>
+<defs><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ff0e0"/><stop offset="1" stop-color="#169c90"/></linearGradient></defs>
+<ellipse cx="64" cy="118" rx="32" ry="4.5" fill="#1a1530" opacity=".14"/>
+<path d="M64 38 V22" stroke="#127a70" stroke-width="4" stroke-linecap="round"/>
+<circle cx="64" cy="18" r="7" fill="#ffd84d"><animate attributeName="opacity" values="1;.45;1" dur="2s" repeatCount="indefinite"/></circle>
+<circle cx="64" cy="18" r="12" fill="#ffd84d" opacity=".25"/>
+<rect x="20" y="66" width="10" height="22" rx="5" fill="#127a70"/><rect x="98" y="66" width="10" height="22" rx="5" fill="#127a70"/>
+<rect x="26" y="38" width="76" height="76" rx="22" fill="url(#b)"/>
+<rect x="36" y="52" width="56" height="42" rx="13" fill="#123a45"/>
+<g class="eyes"><rect x="47" y="63" width="9" height="12" rx="4.5" fill="#6ff7ff"/><rect x="72" y="63" width="9" height="12" rx="4.5" fill="#6ff7ff"/></g>
+<path d="M58 83 Q64 87 70 83" stroke="#6ff7ff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+<ellipse cx="40" cy="104" rx="5" ry="3" fill="#ff8fb1" opacity=".6"/><ellipse cx="88" cy="104" rx="5" ry="3" fill="#ff8fb1" opacity=".6"/>
+<rect x="34" y="42" width="22" height="5" rx="2.5" fill="#fff" opacity=".4"/>
+
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Luna">
+<title>Luna</title>
+<style>
+.eyes{transform-box:fill-box;transform-origin:center;animation:blink 5.2s infinite}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.1)}}
+</style>
+<defs><radialGradient id="b" cx="38%" cy="30%" r="75%"><stop offset="0" stop-color="#5a67b8"/><stop offset="1" stop-color="#232a5c"/></radialGradient><radialGradient id="e" cx="50%" cy="50%" r="75%"><stop offset="0" stop-color="#fff7c2"/><stop offset="1" stop-color="#ffd24d"/></radialGradient></defs>
+<ellipse cx="64" cy="118" rx="32" ry="4.5" fill="#1a1530" opacity=".14"/>
+<path d="M30 46 L24 20 L48 38Z" fill="#3a4486"/><path d="M98 46 L104 20 L80 38Z" fill="#3a4486"/>
+<path d="M24 80 C24 52 42 38 64 38 C86 38 104 52 104 80 C104 103 87 116 64 116 C41 116 24 103 24 80Z" fill="url(#b)"/>
+<path d="M46 96 C52 88 76 88 82 96 C78 108 70 112 64 112 C58 112 50 108 46 96Z" fill="#8c96d6" opacity=".45"/>
+<circle cx="48" cy="72" r="14" fill="url(#e)"/><circle cx="80" cy="72" r="14" fill="url(#e)"/>
+<g class="eyes"><circle cx="48" cy="72" r="7" fill="#1b1f3f"/><circle cx="80" cy="72" r="7" fill="#1b1f3f"/>
+<circle cx="50.5" cy="69.5" r="2.4" fill="#fff"/><circle cx="82.5" cy="69.5" r="2.4" fill="#fff"/></g>
+<path d="M60 84 L64 90 L68 84Z" fill="#ffb347"/>
+<path d="M100 22 A9 9 0 1 0 110 34 A7 7 0 1 1 100 22Z" fill="#ffe27a"/>
+<path d="M18 30 l1.6 3.4 3.4 1.6 -3.4 1.6 -1.6 3.4 -1.6 -3.4 -3.4 -1.6 3.4 -1.6Z" fill="#fff5b8">
+  <animate attributeName="opacity" values="1;.2;1" dur="3s" repeatCount="indefinite"/></path>
+
+</svg>
