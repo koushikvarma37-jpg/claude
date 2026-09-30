@@ -176,3 +176,19 @@ def test_recurring_schedules_need_approval(make_rt):
     _, run = goal_and_run(rt)
     assert rt.agent.run(run["id"]) == "waiting_approval"
     assert rt.store.list_approvals()[0]["risk"] == "external"
+
+
+def test_claimed_notification_must_actually_happen(make_rt):
+    rt = make_rt([say("Site is up. A notification has been sent to the owner."),
+                  say("", call("notify_owner", message="Site is up")), say("Site is up; I notified you.")])
+    _, run = goal_and_run(rt, "Check the site and notify me")
+    assert rt.agent.run(run["id"]) == "done"
+    assert rt.store.notifications()[0]["message"] == "Site is up"
+    assert any(e["kind"] == "claim_check" for e in rt.store.events(run["id"]))
+
+
+def test_claim_check_nudges_only_once(make_rt):
+    rt = make_rt([say("I notified you."), say("I notified you, really.")])
+    _, run = goal_and_run(rt)
+    assert rt.agent.run(run["id"]) == "done"
+    assert len(rt.brain.seen) == 2
