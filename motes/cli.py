@@ -78,7 +78,12 @@ def cmd_doctor(a) -> None:
     if not dcfg.get("enabled", True):
         print("decision: disabled")
     elif dcfg.get("engine", "laya") == "laya":
-        ok &= _check_laya(dcfg.get("laya", {}))
+        if not _check_laya(dcfg.get("laya", {})):
+            if dcfg.get("system2", {}).get("enabled", True):
+                print("  Until Laya is up, System 2 makes every decision:")
+                ok &= _check_openai("  system 2", dcfg["llm"])
+            else:
+                ok = False
     else:
         ok &= _check_openai("decision", dcfg["llm"])
     for spec in cfg.get("mcp_servers") or []:
