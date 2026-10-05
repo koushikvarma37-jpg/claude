@@ -3,6 +3,7 @@
 <style>
 .eyes{transform-box:fill-box;transform-origin:center;animation:blink 5.2s infinite}
 @keyframes blink{0%,94%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.1)}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
 </style>
 <defs><radialGradient id="b" cx="38%" cy="30%" r="75%"><stop offset="0" stop-color="#b9e6ff"/><stop offset="1" stop-color="#2f7fd6"/></radialGradient></defs>
 <ellipse cx="64" cy="118" rx="30" ry="4.5" fill="#1a1530" opacity=".14"/>

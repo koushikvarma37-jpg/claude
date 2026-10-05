@@ -1,11 +1,7 @@
-# Config for docker-compose: the models live in the `ollama` service.
+# Config for docker-compose: the model lives in the `ollama` service.
 brain:
   base_url: http://ollama:11434/v1
-  model: qwen3:14b
-decision:
-  engine: laya
-  laya:
-    url: http://laya:8000
+  model: qwen3:8b
 server:
   host: 0.0.0.0
 notify:

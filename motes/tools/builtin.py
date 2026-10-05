@@ -34,7 +34,10 @@ READ_CMDS = {
     "ls", "cat", "head", "tail", "pwd", "echo", "grep", "rg", "wc", "df", "du", "date",
     "whoami", "uname", "ps", "which", "stat", "file", "tree", "less", "sort", "uniq",
     "cut", "jq", "hostname", "uptime", "free", "top", "env", "printenv", "diff", "true",
+    "cd", "test", "[", "printf", "basename", "dirname", "realpath", "sleep", "date", "cal", "md5sum", "sha256sum",
 }
+# Local, additive changes: they create things but don't overwrite or reach the network.
+WRITE_CMDS = {"mkdir", "touch"}
 READ_GIT = {"status", "log", "diff", "show", "branch", "remote", "rev-parse", "blame", "ls-files"}
 NET_CMDS = {"curl", "wget", "ssh", "scp", "rsync", "sftp", "ftp", "nc", "telnet", "mail", "sendmail"}
 DESTRUCTIVE = re.compile(
@@ -67,6 +70,9 @@ def shell_risk(args: dict, goal: dict | None = None) -> str:
         if prog == "find" and not {"-delete", "-exec", "-execdir"} & set(words):
             continue
         if prog in READ_CMDS:
+            continue
+        if prog in WRITE_CMDS:
+            worst = max(worst, "write", key=_rank)
             continue
         # Unknown programs could do anything, so they need a judgement call.
         return "external"

@@ -33,10 +33,8 @@ def _ts(t: float | None) -> str:
 def cmd_init(a) -> None:
     path = config.init(force=a.force)
     print(f"config: {path}")
-    print("Next: install Ollama (https://ollama.com), then\n"
-          "  ollama pull qwen3:14b                          # the brain\n"
-          "  pip install \"laya[serve]\" && laya-serve        # the decision model\n"
-          "  motes doctor\n  motes up")
+    print("Next:  motes setup     (finds Ollama and downloads a model that fits this computer)\n"
+          "       motes up        (starts Motes and opens the dashboard)")
 
 
 def _check_openai(role: str, c: dict) -> bool:
@@ -54,21 +52,14 @@ def _check_openai(role: str, c: dict) -> bool:
         return False
 
 
-def _check_laya(lcfg: dict) -> bool:
-    from .laya_decider import LayaDecider
-    where = lcfg.get("url") if lcfg.get("mode", "http") == "http" else f"in-process {lcfg.get('checkpoint') or 'Router'}"
-    try:
-        decider = LayaDecider.from_config(lcfg)
-        decider.backend.health()
-        v = decider.evaluate("Tell me the weather in Lisbon.", "web_search", {"query": "Lisbon weather"}, "read")
-        if v.confidence == 0.0 and "unavailable" in v.reason:
-            raise RuntimeError(v.reason)
-        print(f"decision: Laya at {where} is working (sample decision: {v.reason})")
-        return True
-    except Exception as exc:
-        print(f"decision: Laya at {where} is not reachable ({exc}).\n"
-              "  Start it with:  pip install \"laya[serve]\" && laya-serve")
-        return False
+def cmd_setup(a) -> None:
+    from .setup import run
+    sys.exit(run(a.model, start=not a.no_start))
+
+
+def cmd_mcp(a) -> None:
+    from .mcp_server import main as serve
+    serve(allow_approvals=a.allow_approvals)
 
 
 def cmd_doctor(a) -> None:
@@ -76,19 +67,15 @@ def cmd_doctor(a) -> None:
     ok = _check_openai("brain", cfg["brain"])
     dcfg = cfg["decision"]
     if not dcfg.get("enabled", True):
-        print("decision: disabled")
-    elif dcfg.get("engine", "laya") == "laya":
-        if not _check_laya(dcfg.get("laya", {})):
-            if dcfg.get("system2", {}).get("enabled", True):
-                print("  Until Laya is up, System 2 makes every decision:")
-                ok &= _check_openai("  system 2", dcfg["llm"])
-            else:
-                ok = False
+        print("decision: off (every risky action waits for you)")
+    elif dcfg.get("model") or dcfg.get("base_url"):
+        ok &= _check_openai("decision", {**cfg["brain"], "model": dcfg.get("model") or cfg["brain"]["model"],
+                                         "base_url": dcfg.get("base_url") or cfg["brain"]["base_url"]})
     else:
-        ok &= _check_openai("decision", dcfg["llm"])
+        print(f"decision: same model as the brain ({cfg['brain']['model']})")
     for spec in cfg.get("mcp_servers") or []:
         print(f"app: {spec.get('name')} ({'url' if spec.get('url') else spec.get('command')})")
-    print("all good" if ok else "fix the items above, then run `motes up`")
+    print("all good" if ok else "fix the items above, or run `motes setup`")
     sys.exit(0 if ok else 1)
 
 
@@ -97,18 +84,59 @@ def _runtime(connect_apps: bool = True):
     return build(connect_apps=connect_apps)
 
 
+def lan_ip() -> str | None:
+    """This computer's address on the local network (no traffic is sent)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))  # TEST-NET address: picks the LAN interface, sends nothing
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def print_qr(text: str) -> None:
+    try:
+        import qrcode
+    except ImportError:
+        return
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(text)
+    qr.print_ascii(invert=True)
+
+
 def cmd_up(a) -> None:
+    import secrets
+
     import uvicorn
 
     from .server import create_app
 
+    cfg = config.load()
+    host = "0.0.0.0" if a.lan else (a.host or cfg["server"]["host"])
+    port = a.port or cfg["server"]["port"]
+    local_only = host in ("127.0.0.1", "localhost", "::1")
+    if not local_only and not cfg["server"].get("token"):
+        # Reachable from other devices: never without a token.
+        file_cfg = config.load()
+        file_cfg["server"]["token"] = secrets.token_urlsafe(18)
+        config.save(file_cfg)
+        print("Created an access token for other devices (saved in config.yaml as server.token).")
     rt = _runtime()
-    host, port = a.host or rt.cfg["server"]["host"], a.port or rt.cfg["server"]["port"]
+    if a.lan:
+        rt.cfg["server"]["host"] = host
     rt.daemon.start()
-    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
-    print(f"Motes {__version__}: {len(rt.registry)} tools, {len(rt.mcp_clients)} apps. Dashboard: {url}")
+    token = rt.cfg["server"].get("token") or ""
+    local = f"http://localhost:{port}" + (f"/?token={token}" if token else "")
+    print(f"Motes {__version__}: {len(rt.registry)} tools, {len(rt.mcp_clients)} apps.")
+    print(f"Dashboard on this computer:  {local}")
+    if not local_only and (ip := lan_ip()):
+        phone = f"http://{ip}:{port}/?token={token}"
+        print(f"On your phone (same Wi-Fi):  {phone}")
+        print_qr(phone)
+        print("Anyone with this link can control your motes. Keep it private.")
     if not a.no_browser:
-        webbrowser.open(url)
+        webbrowser.open(local)
     try:
         uvicorn.run(create_app(rt), host=host, port=port, log_level="warning")
     finally:
@@ -217,12 +245,13 @@ def cmd_tools(a) -> None:
 
 
 def cmd_rlcd(a) -> None:
-    from .llm import ChatClient
+    from .decision import DecisionModel
     from .rlcd import build_pairs, situations_from_file, situations_from_store, write_jsonl
 
     cfg = config.load()
-    dcfg = cfg["decision"]["llm"]
-    client = ChatClient(**{**dcfg, "model": a.model or dcfg["model"], "native_tools": False})
+    if a.model:
+        cfg["decision"]["model"] = a.model
+    client = DecisionModel.from_config({**cfg, "decision": {**cfg["decision"], "enabled": True}}).client
     sources = list(situations_from_store(_store()))
     seed = Path(a.seed) if a.seed else None
     if seed and seed.exists():
@@ -232,23 +261,6 @@ def cmd_rlcd(a) -> None:
     print(f"building RLCD pairs from {len(sources)} situations with {client.model}...")
     n = write_jsonl(build_pairs(client, sources, skip_ties=not a.keep_ties), Path(a.out))
     print(f"wrote {n} preference pairs to {a.out}. Next: python training/train_dpo.py --data {a.out}")
-
-
-def cmd_laya(a) -> None:
-    if a.action == "check":
-        sys.exit(0 if _check_laya(config.load()["decision"].get("laya", {})) else 1)
-    from .laya_train import labelled_from_file, labelled_from_store, to_rows, write_jsonl
-
-    situations = list(labelled_from_store(_store()))
-    from_you = len(situations)
-    seed = Path(a.seed) if a.seed else None
-    if seed and seed.exists():
-        situations += list(labelled_from_file(seed))
-    if not situations:
-        sys.exit("nothing labelled yet: approve/deny some actions first, or pass --seed training/seed_scenarios.jsonl")
-    n = write_jsonl(to_rows(situations, a.format, augment_order=not a.no_augment), Path(a.out))
-    print(f"wrote {n} Laya {a.format} rows to {a.out} ({from_you} situations from your approvals, "
-          f"{len(situations) - from_you} from the seed file). See training/README.md for fine-tuning.")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -264,9 +276,20 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_init)
 
+    s = sub.add_parser("setup", help="find Ollama, download a model that fits this computer, save the config")
+    s.add_argument("--model", help="use this Ollama model instead of picking one (e.g. qwen3:14b)")
+    s.add_argument("--no-start", action="store_true", help="don't start Ollama if it isn't running")
+    s.set_defaults(fn=cmd_setup)
+
     sub.add_parser("doctor", help="check that the models are reachable").set_defaults(fn=cmd_doctor)
 
+    s = sub.add_parser("mcp", help="serve Motes over MCP (stdio) for Claude Desktop, Cursor, VS Code...")
+    s.add_argument("--allow-approvals", action="store_true",
+                   help="let the connected app approve or deny waiting actions")
+    s.set_defaults(fn=cmd_mcp)
+
     s = sub.add_parser("up", help="start the daemon and the dashboard")
+    s.add_argument("--lan", action="store_true", help="also open the dashboard to phones and laptops on your Wi-Fi")
     s.add_argument("--host")
     s.add_argument("--port", type=int)
     s.add_argument("--no-browser", action="store_true")
@@ -310,16 +333,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--builtin-only", action="store_true")
     s.set_defaults(fn=cmd_tools)
 
-    s = sub.add_parser("laya", help="Laya decision engine: check it, or export your decisions to fine-tune it")
-    s.add_argument("action", choices=["check", "export"])
-    s.add_argument("--out", default="data/laya-train.jsonl")
-    s.add_argument("--format", default="train", choices=["train", "eval"],
-                   help="train: Laya fine-tuning rows (gold); eval: laya-evals rows (expected)")
-    s.add_argument("--seed", default="training/seed_scenarios.jsonl")
-    s.add_argument("--no-augment", action="store_true", help="don't add option-order rotations")
-    s.set_defaults(fn=cmd_laya)
-
-    s = sub.add_parser("rlcd", help="(llm engine) build contrastive preference pairs for a chat-model judge")
+    s = sub.add_parser("rlcd", help="build RLCD preference data for fine-tuning the decision model")
     s.add_argument("action", choices=["build"])
     s.add_argument("--out", default="data/rlcd.jsonl")
     s.add_argument("--seed", default="training/seed_scenarios.jsonl")

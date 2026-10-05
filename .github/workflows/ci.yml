@@ -17,6 +17,4 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
-      # Laya's server code without PyTorch, for the wire-protocol test against laya.serve.
-      - run: pip install --no-deps "laya>=0.3.21"
       - run: pytest -q

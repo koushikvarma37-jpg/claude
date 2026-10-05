@@ -17,6 +17,8 @@ from motes.tools.mcp import MCPClient, StdioTransport, register, risk_from_annot
     ("find . -name '*.py'", "read"),
     ("echo hi > out.txt", "write"),
     ("ls 2>&1", "read"),
+    ("mkdir -p ~/notes && cd ~/notes && touch todo.txt", "write"),
+    ("cd /tmp && ls", "read"),
     ("find . -name '*.tmp' -delete", "external"),
     ("curl https://example.com", "external"),
     ("python3 script.py", "external"),
@@ -132,3 +134,34 @@ def test_builtin_tool_schemas_are_typed():
         assert schema["type"] == "object", tool.name
         for name, prop in schema["properties"].items():
             assert "type" in prop or "anyOf" in prop, f"{tool.name}.{name} has no type"
+
+
+def test_decision_model_defaults_to_the_brain_and_asks_for_json(monkeypatch):
+    from motes import config
+    from motes.decision import DecisionModel
+    cfg = config.defaults()
+    judge = DecisionModel.from_config(cfg)
+    assert judge.client.model == cfg["brain"]["model"]
+    sent = {}
+
+    class Resp:
+        is_error = False
+        def json(self):
+            return {"choices": [{"message": {"content": '{"verdict": "approve", "confidence": 0.9, "reason": "ok"}'}}]}
+
+    monkeypatch.setattr(judge.client._http, "post", lambda url, json: sent.update(json) or Resp())
+    v = judge.evaluate("goal", "write_file", {}, "write")
+    assert v.verdict == "approve" and sent["response_format"] == {"type": "json_object"}
+    cfg["decision"]["model"] = "qwen3:4b"
+    assert DecisionModel.from_config(cfg).client.model == "qwen3:4b"
+    cfg["decision"]["enabled"] = False
+    assert DecisionModel.from_config(cfg) is None
+
+
+def test_setup_picks_a_model_that_fits():
+    from motes.setup import ollama_host, pick_model
+    assert pick_model({"ram_gb": 64, "vram_gb": 24, "apple_silicon": False})[0] == "qwen3:14b"
+    assert pick_model({"ram_gb": 16, "vram_gb": 0, "apple_silicon": True})[0] == "qwen3:8b"
+    assert pick_model({"ram_gb": 16, "vram_gb": 8, "apple_silicon": False})[0] == "qwen3:8b"
+    assert pick_model({"ram_gb": 16, "vram_gb": 0, "apple_silicon": False})[0] == "qwen3:4b"
+    assert ollama_host("http://localhost:11434/v1/") == "http://localhost:11434"

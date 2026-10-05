@@ -118,11 +118,13 @@ class ChatClient:
         )
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             temperature: float | None = None) -> Reply:
+             temperature: float | None = None, json_mode: bool = False) -> Reply:
         body: dict[str, Any] = {
             "model": self.model,
             "temperature": self.temperature if temperature is None else temperature,
         }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}  # Ollama and most servers honour this
         if self.native_tools:
             body["messages"] = messages
             if tools:

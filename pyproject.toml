@@ -26,8 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 notify = ["apprise>=1.7"]
-# Run Laya inside Motes (decision.laya.mode: local). Pulls in PyTorch.
-laya = ["laya>=0.3.21"]
+# Prints a QR code for the phone link with `motes up --lan`.
+lan = ["qrcode>=7"]
 train = ["torch", "transformers", "trl>=0.9", "peft", "datasets"]
 dev = ["pytest>=8"]
 
@@ -38,7 +38,7 @@ motes = "motes.cli:main"
 include = ["motes*"]
 
 [tool.setuptools.package-data]
-motes = ["web/*", "web/avatars/*", "catalog.yaml", "default_config.yaml"]
+motes = ["web/*", "web/avatars/*", "web/icons/*", "catalog.yaml", "default_config.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

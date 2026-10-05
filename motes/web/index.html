@@ -2,57 +2,67 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Motes</title>
-<link rel="icon" href="/static/avatars/pip.svg">
+<meta name="description" content="Your always-on personal agents, running on your own computer.">
+<meta name="theme-color" content="#5546e8">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/avatars/pip.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Motes">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to main content</a>
 <header>
-  <div class="brand"><img src="/static/avatars/pip.svg" alt=""><span>motes</span></div>
-  <div id="status" class="status"></div>
+  <h1 class="brand"><img src="/static/avatars/pip.svg" alt=""><span>motes</span></h1>
+  <div id="status" class="status" aria-label="System status"></div>
 </header>
 
-<section class="cast" id="cast"></section>
+<nav class="cast" id="cast" aria-label="Your motes. Pick one to give it the next goal."></nav>
 
-<main>
-  <section class="panel inbox" id="inbox" hidden>
-    <h2>From your motes</h2>
+<main id="main" tabindex="-1">
+  <section class="panel inbox" id="inbox" aria-labelledby="inbox-h" hidden>
+    <h2 id="inbox-h">From your motes</h2>
     <div id="messages"></div>
   </section>
 
-  <section class="panel compose">
-    <h2>Give a mote a goal</h2>
+  <section class="panel compose" aria-labelledby="compose-h">
+    <h2 id="compose-h">Give a mote a goal</h2>
     <form id="goal-form">
-      <textarea id="g-text" rows="3" required
+      <label class="field-label" for="g-text">What should it do?</label>
+      <textarea id="g-text" rows="3" required aria-describedby="g-err"
         placeholder="e.g. Every morning at 7, read my unread email and leave me a summary of what needs a reply."></textarea>
       <div class="row">
-        <label>Who <select id="g-char"></select></label>
-        <label>When <input id="g-sched" value="once" list="scheds"></label>
+        <label for="g-char">Who <select id="g-char"></select></label>
+        <label for="g-sched">When <input id="g-sched" value="once" list="scheds" aria-describedby="sched-help"></label>
         <datalist id="scheds">
           <option value="once"><option value="in 1h"><option value="every 30m"><option value="every 2h">
           <option value="daily 07:00"><option value="cron 0 9 * * 1-5"><option value="manual">
         </datalist>
         <button type="submit">Start</button>
       </div>
-      <p class="hint" id="g-err"></p>
+      <p class="sr-only" id="sched-help">For example: once, in 2h, every 30m, daily 07:00, or manual.</p>
+      <p class="hint" id="g-err" role="alert"></p>
     </form>
   </section>
 
-  <nav class="tabs">
-    <button data-tab="approvals" class="on">Needs you <span id="badge" class="badge"></span></button>
-    <button data-tab="activity">Activity</button>
-    <button data-tab="goals">Goals</button>
-    <button data-tab="tools">Hands &amp; apps</button>
-  </nav>
+  <div class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="t-approvals" data-tab="approvals" aria-controls="tab-approvals" aria-selected="true">Needs you <span id="badge" class="badge"></span></button>
+    <button role="tab" id="t-activity" data-tab="activity" aria-controls="tab-activity" aria-selected="false" tabindex="-1">Activity</button>
+    <button role="tab" id="t-goals" data-tab="goals" aria-controls="tab-goals" aria-selected="false" tabindex="-1">Goals</button>
+    <button role="tab" id="t-tools" data-tab="tools" aria-controls="tab-tools" aria-selected="false" tabindex="-1">Hands &amp; apps</button>
+  </div>
 
-  <section id="tab-approvals" class="tab on"></section>
-  <section id="tab-activity" class="tab"></section>
-  <section id="tab-goals" class="tab"></section>
-  <section id="tab-tools" class="tab"></section>
+  <section id="tab-approvals" class="tab on" role="tabpanel" aria-labelledby="t-approvals" tabindex="0"></section>
+  <section id="tab-activity" class="tab" role="tabpanel" aria-labelledby="t-activity" tabindex="0"></section>
+  <section id="tab-goals" class="tab" role="tabpanel" aria-labelledby="t-goals" tabindex="0"></section>
+  <section id="tab-tools" class="tab" role="tabpanel" aria-labelledby="t-tools" tabindex="0"></section>
 </main>
 
-<dialog id="run-dialog"><div id="run-body"></div><form method="dialog"><button>Close</button></form></dialog>
+<dialog id="run-dialog" aria-labelledby="run-title"><div id="run-body"></div><form method="dialog"><button>Close</button></form></dialog>
+<div id="announcer" class="sr-only" aria-live="polite"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

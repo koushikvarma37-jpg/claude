@@ -55,6 +55,10 @@ def create_app(rt: Runtime) -> FastAPI:
     def index():
         return FileResponse(WEB / "index.html")
 
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        return FileResponse(WEB / "manifest.webmanifest", media_type="application/manifest+json")
+
     app.mount("/static", StaticFiles(directory=WEB), name="static")
 
     @app.get("/api/characters")
@@ -72,7 +76,7 @@ def create_app(rt: Runtime) -> FastAPI:
                 by_char[goal["character"]] = run["status"]
         return {
             "brain": rt.cfg["brain"]["model"],
-            "decision": _decider_name(rt.cfg["decision"]),
+            "decision": _decider_name(rt.cfg),
             "unattended": bool(rt.cfg["autonomy"].get("unattended")),
             "tools": len(rt.registry),
             "apps": [c.name for c in rt.mcp_clients],
@@ -197,16 +201,11 @@ def create_app(rt: Runtime) -> FastAPI:
     return app
 
 
-def _decider_name(dcfg: dict) -> str | None:
+def _decider_name(cfg: dict) -> str | None:
+    dcfg = cfg["decision"]
     if not dcfg.get("enabled", True):
         return None
-    if dcfg.get("engine", "laya") == "laya":
-        lcfg = dcfg.get("laya", {})
-        name = f"Laya {lcfg.get('model') or 'auto'}" + (" (fine-tuned)" if lcfg.get("checkpoint") else "")
-        if dcfg.get("system2", {}).get("enabled", True):
-            name += f" + System 2 {dcfg.get('llm', {}).get('model', '')}"
-        return name
-    return dcfg.get("llm", {}).get("model")
+    return dcfg.get("model") or cfg["brain"]["model"]
 
 
 def _404(what: str):

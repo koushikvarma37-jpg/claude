@@ -1,8 +1,9 @@
-"""The decision model: a second, independent model that judges each action.
+"""The decision model: an independent judge of each risky action.
 
-The brain proposes, the decider disposes. The default engine is Laya
-(laya_decider.py). This module holds the shared Verdict type and the
-alternative engine: a prompted judge that works with any chat model.
+The brain proposes, the decider disposes. The judge is an Ollama model (by default
+the brain's own model) asked in a fresh conversation, with no stake in the plan,
+whether the action should run while the owner is away. `motes rlcd build` turns
+its logged judgements and the owner's answers into data for fine-tuning it.
 """
 
 from __future__ import annotations
@@ -59,48 +60,26 @@ class DecisionModel:
         self.client = client
 
     @classmethod
-    def from_config(cls, cfg: dict):
-        """The configured decision engine: Laya (default), a chat-model judge, or None."""
+    def from_config(cls, cfg: dict) -> "DecisionModel | None":
         dcfg = cfg.get("decision", {})
         if not dcfg.get("enabled", True):
             return None
-        llm_judge = cls(ChatClient(**{**dcfg.get("llm", {}), "native_tools": False, "temperature": 0.0}))
-        if dcfg.get("engine", "laya") != "laya":
-            return llm_judge
-        from .laya_decider import LayaDecider
-        system1 = LayaDecider.from_config(dcfg.get("laya", {}))
-        s2 = dcfg.get("system2", {})
-        if not s2.get("enabled", True):
-            return system1
-        return DualProcess(system1, llm_judge, float(s2.get("below", dcfg.get("min_confidence", 0.8))))
-
+        brain = cfg["brain"]
+        return cls(ChatClient(
+            base_url=dcfg.get("base_url") or brain["base_url"],
+            model=dcfg.get("model") or brain["model"],
+            api_key=dcfg.get("api_key") or brain.get("api_key", "ollama"),
+            timeout_seconds=brain.get("timeout_seconds", 600),
+            native_tools=False, temperature=0.0,
+        ))
 
     def evaluate(self, goal: str, tool: str, args: dict, risk: str, recent: str = "") -> Verdict:
         try:
             reply = self.client.chat([
                 {"role": "system", "content": JUDGE_SYSTEM},
                 {"role": "user", "content": judge_prompt(goal, tool, args, risk, recent)},
-            ])
+            ], json_mode=True)
         except Exception as exc:  # an unreachable decider must fail safe
             return Verdict("ask_human", 0.0, f"decision model unavailable: {exc}")
         return parse_verdict(reply.content)
 
-
-class DualProcess:
-    """Laya is System 1: fast, calibrated, one forward pass, for every decision. Only when it is
-    unsure (or unreachable) does System 2, a chat model reasoning step by step, get consulted.
-
-    A confident System 1 answer is final. System 2 can resolve uncertainty, but it can never
-    overrule a System 1 flag of injected instructions."""
-
-    def __init__(self, system1, system2, below: float = 0.8):
-        self.system1, self.system2, self.below = system1, system2, below
-
-    def evaluate(self, goal: str, tool: str, args: dict, risk: str, recent: str = "") -> Verdict:
-        fast = self.system1.evaluate(goal, tool, args, risk, recent)
-        injected = getattr(self.system1, "last_signals", {}).get("injected", 0.0)
-        if fast.confidence >= self.below or (fast.verdict == "deny" and injected >= 0.5):
-            return Verdict(fast.verdict, fast.confidence, f"System 1 · {fast.reason}")
-        slow = self.system2.evaluate(goal, tool, args, risk, recent)
-        return Verdict(slow.verdict, slow.confidence,
-                       f"System 2 · {slow.reason} (System 1 unsure: {fast.reason})"[:500])
