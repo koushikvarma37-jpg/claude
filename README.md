@@ -1,17 +1,18 @@
-# 🪐 Teja Varma · Mission Control
+# Teja Varma · TV-26 Datasheet
 
 Personal portfolio of **Teja Varma**, a 3rd-year ECE student at Vishnu Institute of Technology exploring AI and building **Orbit**, an AI-powered desktop agent.
 
-The site is a single self-contained `index.html` with no build step and no dependencies.
+The site is a single `index.html` with no build step. It loads fonts from Google Fonts and GSAP from cdnjs.
 
 ## ✨ Features
 
-- 🚀 Boot-sequence intro and an interactive starfield (parallax + shooting stars)
-- 🛰️ **Orbit mission console**: a simulated terminal where visitors can "command" Orbit
-- 🪐 Skills shown as a solar system that orbits around you (hover to pause)
-- 🗺️ Missions timeline: SIH, Hacker House Goa 2026, Mitra Club, Orbit
-- 🏏 Off-duty section with a cricket scoreboard ("Hit a six!") and a movie reel
-- 📱 Fully responsive, and respects reduced-motion settings
+- Designed as an electronics datasheet for part **TV-26**, with numbered datasheet sections
+- **Paper / Scope modes**: a printed spec sheet or a dark oscilloscope screen, switched with a circular wipe
+- Live oscilloscope hero: a square wave built from Fourier harmonics (hover to control the harmonics)
+- **Orbit console**: a simulated app where commands flow through Command → Understand → Plan → Execute
+- Skills as a 14-pin IC pinout (pin 7 GND, pin 14 VCC, like 74-series logic)
+- Scroll-driven transitions with GSAP; everything stays visible if scripts fail to load
+- Responsive, and respects reduced-motion settings
 
 ## ▶️ View locally
 
@@ -30,10 +31,9 @@ Everything lives in `index.html`:
 
 | What to change | Where to look |
 | --- | --- |
-| Typing roles in the hero | `const roles = [...]` in the script |
 | Orbit terminal demo replies | `const scripts = {...}` in the script |
-| Skills and their stages | `<section id="skills">` |
-| New hackathons and achievements | Add a `.t-item` block in `<section id="missions">` |
-| Colours | CSS variables in `:root` at the top |
+| Skills (chip pins) | `const pins = [...]` in the script |
+| New hackathons and achievements | Add a `.run` block in `<section id="log">` |
+| Colours | CSS variables in `:root` (paper) and `[data-theme="dark"]` (scope) |
 
-Once Orbit has its own GitHub repo, update the "Follow the build on GitHub" link in `<section id="orbit">` to point to it.
+Once Orbit has its own GitHub repo, update the "Follow on GitHub" link in `<section id="orbit">` to point to it.
