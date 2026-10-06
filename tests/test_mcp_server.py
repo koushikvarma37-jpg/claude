@@ -45,5 +45,9 @@ def test_approvals_only_with_the_flag(tmp_path):
         client.call_tool("motes_decide", {"approval_id": appr["id"], "approve": True})
         assert store.get_approval(appr["id"])["status"] == "approved"
         assert store.get_run(run["id"])["status"] == "queued"
+        assert any(e["kind"] == "approval_decided" and e["data"]["via"] == "mcp" for e in store.events(run["id"]))
+        again = client.call("tools/call", {"name": "motes_decide", "arguments": {"approval_id": appr["id"], "approve": False}})
+        assert again.get("isError") and "already approved" in again["content"][0]["text"]
+        assert store.get_approval(appr["id"])["status"] == "approved"
     finally:
         client.close()

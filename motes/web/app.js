@@ -5,7 +5,13 @@ try { if (token) localStorage.setItem("motes-token", token); else token = localS
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const ago = (t) => { const s = Date.now() / 1000 - t; return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : new Date(t * 1000).toLocaleString(); };
+// A fixed timestamp ("14:05", or "3 Oct, 14:05" on other days). Unlike "2m ago" it doesn't change
+// every minute, so sections only redraw when their data really changes.
+const stamp = (t) => {
+  const d = new Date(t * 1000), today = new Date().toDateString() === d.toDateString();
+  return today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+               : d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+};
 const when = (t) => (t ? new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—");
 const avatar = (id) => `/static/avatars/${encodeURIComponent(id || "pip")}.svg`;
 
@@ -69,7 +75,7 @@ async function renderApprovals() {
     <article class="card" aria-labelledby="ap-${esc(a.id)}"><img src="${avatar(a.character)}" alt="">
       <div class="body">
         <h3 class="title" id="ap-${esc(a.id)}">${esc(a.tool)} <span class="risk ${esc(a.risk)}">${esc(a.risk)}</span></h3>
-        <div class="meta">for “${esc(a.goal)}” · ${ago(a.created_at)}</div>
+        <div class="meta">for “${esc(a.goal)}” · <time datetime="${new Date(a.created_at * 1000).toISOString()}">${stamp(a.created_at)}</time></div>
         <pre>${esc(JSON.stringify(a.args, null, 2))}</pre>
         ${a.reason ? `<div class="meta">Decision model: ${esc(a.reason)}</div>` : ""}
         <div class="actions"><label class="sr-only" for="note-${esc(a.id)}">Note for the mote</label>
@@ -96,7 +102,7 @@ async function renderActivity() {
   const changed = setHTML($("#tab-activity"), runs.length ? runs.map((r) => `
     <article class="card"><img src="${avatar(g[r.goal_id]?.character)}" alt="">
       <div class="body"><h3 class="title"><button class="card-open" data-run="${esc(r.id)}">${esc(g[r.goal_id]?.title || "deleted goal")}</button></h3>
-        <div class="meta"><span class="s-${esc(r.status)}">${esc(r.status.replace("_", " "))}</span> · ${esc(r.trigger)} · ${ago(r.updated_at)} · ${r.step} steps</div>
+        <div class="meta"><span class="s-${esc(r.status)}">${esc(r.status.replace("_", " "))}</span> · ${esc(r.trigger)} · <time datetime="${new Date(r.updated_at * 1000).toISOString()}">${stamp(r.updated_at)}</time> · ${r.step} steps</div>
         ${r.result ? `<pre>${esc(r.result)}</pre>` : ""}</div></article>`).join("") : empty("pip", "No activity yet. Give a mote a goal above."));
   if (changed) document.querySelectorAll("[data-run]").forEach((el) => el.onclick = () => showRun(el.dataset.run));
 }
@@ -153,7 +159,7 @@ async function renderMessages() {
   $("#inbox").hidden = !items.length;
   setHTML($("#messages"), items.map((n) => `
     <div class="msg"><img src="${avatar(n.character)}" alt="">
-      <div><b>${esc(n.title)}</b> ${esc(n.message)}<div class="meta">${esc(n.goal || "")} · ${ago(n.ts)}</div></div></div>`).join(""));
+      <div><b>${esc(n.title)}</b> ${esc(n.message)}<div class="meta">${esc(n.goal || "")} · <time datetime="${new Date(n.ts * 1000).toISOString()}">${stamp(n.ts)}</time></div></div></div>`).join(""));
   if (items[0] && lastMessage !== null && items[0].id !== lastMessage) announce(`New message: ${items[0].title}. ${items[0].message}`);
   lastMessage = items[0] ? items[0].id : 0;
 }
@@ -166,6 +172,7 @@ async function refresh() {
     renderStatus(s); renderCast(s); await renderMessages();
     if (tab !== "tools") await renderers[tab]();
   } catch (e) {
+    delete rendered.status;  // so the header redraws once Motes answers again
     $("#status").textContent = e.message === "missing or wrong token"
       ? "This dashboard needs its access link. Open the link `motes up` printed (it ends in ?token=...)." : `Can't reach Motes: ${e.message}`;
   }

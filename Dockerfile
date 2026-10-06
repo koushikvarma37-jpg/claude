@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir ".[notify]"
 ENV MOTES_HOME=/data PYTHONUNBUFFERED=1
 VOLUME /data
 EXPOSE 7777
-CMD ["sh", "-c", "motes init >/dev/null && motes up --no-browser --host 0.0.0.0"]
+CMD ["motes", "up", "--no-browser", "--host", "0.0.0.0"]

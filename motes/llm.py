@@ -111,6 +111,7 @@ class ChatClient:
         self.model = model
         self.temperature = temperature
         self.native_tools = native_tools
+        self._json_mode_ok = True
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {api_key}"},
@@ -123,8 +124,8 @@ class ChatClient:
             "model": self.model,
             "temperature": self.temperature if temperature is None else temperature,
         }
-        if json_mode:
-            body["response_format"] = {"type": "json_object"}  # Ollama and most servers honour this
+        if json_mode and self._json_mode_ok:
+            body["response_format"] = {"type": "json_object"}  # Ollama honours this; some servers refuse it
         if self.native_tools:
             body["messages"] = messages
             if tools:
@@ -133,6 +134,11 @@ class ChatClient:
             body["messages"] = to_text_protocol(messages, tools)
 
         resp = self._http.post("/chat/completions", json=body)
+        if resp.status_code in (400, 422) and "response_format" in body:
+            # e.g. LM Studio only takes json_schema. Ask again without it, and stop asking this server.
+            self._json_mode_ok = False
+            body.pop("response_format")
+            resp = self._http.post("/chat/completions", json=body)
         if resp.is_error:
             # Keep the server's explanation; raise_for_status() alone throws it away.
             raise httpx.HTTPStatusError(f"model server returned {resp.status_code}: {resp.text[:500]}",

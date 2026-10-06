@@ -33,12 +33,19 @@ def _clip(text: str, limit: int = MAX_OUT) -> str:
 READ_CMDS = {
     "ls", "cat", "head", "tail", "pwd", "echo", "grep", "rg", "wc", "df", "du", "date",
     "whoami", "uname", "ps", "which", "stat", "file", "tree", "less", "sort", "uniq",
-    "cut", "jq", "hostname", "uptime", "free", "top", "env", "printenv", "diff", "true",
+    "cut", "jq", "hostname", "uptime", "free", "top", "printenv", "diff", "true",
     "cd", "test", "[", "printf", "basename", "dirname", "realpath", "sleep", "date", "cal", "md5sum", "sha256sum",
 }
 # Local, additive changes: they create things but don't overwrite or reach the network.
 WRITE_CMDS = {"mkdir", "touch"}
 READ_GIT = {"status", "log", "diff", "show", "branch", "remote", "rev-parse", "blame", "ls-files"}
+GIT_CHANGES = {"-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "add", "remove", "rm",
+               "rename", "set-url", "set-head", "prune"}
+FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
+# Command or process substitution runs a program the classifier can't see.
+HIDDEN_PROGRAM = re.compile(r"\$\(|`|<\(|>\(")
+# Redirections like 2>&1, >&2 and &>file, so a bare '&' can then be read as "run in background".
+REDIRECT_AMP = re.compile(r"\d*>&\d*|&>>?")
 NET_CMDS = {"curl", "wget", "ssh", "scp", "rsync", "sftp", "ftp", "nc", "telnet", "mail", "sendmail"}
 DESTRUCTIVE = re.compile(
     r"(^|\s)(rm|rmdir|shred|mkfs\S*|dd|shutdown|reboot|halt|poweroff|kill|killall|pkill|format)(\s|$)"
@@ -52,9 +59,12 @@ def shell_risk(args: dict, goal: dict | None = None) -> str:
     cmd = args.get("command", "")
     if DESTRUCTIVE.search(cmd):
         return "destructive"
+    if HIDDEN_PROGRAM.search(cmd):
+        return "external"
     worst = "read"
-    for segment in re.split(r"\|\||&&|[|;]", cmd):
-        if re.search(r"(^|[^2])>", segment):  # output redirection (not 2>&1)
+    # Every way a shell starts another command: ||, &&, |, ;, &, and newlines.
+    for segment in re.split(r"\|\||&&|[|;&\n]", REDIRECT_AMP.sub(lambda m: " >" if "&>" in m.group() else " ", cmd)):
+        if ">" in segment:  # output redirection writes a file
             worst = max(worst, "write", key=_rank)
         try:
             words = shlex.split(segment)
@@ -65,9 +75,9 @@ def shell_risk(args: dict, goal: dict | None = None) -> str:
         prog = os.path.basename(words[0])
         if prog in NET_CMDS:
             return "external"
-        if prog == "git" and len(words) > 1 and words[1] in READ_GIT:
+        if prog == "git" and len(words) > 1 and words[1] in READ_GIT and not GIT_CHANGES & set(words[2:]):
             continue
-        if prog == "find" and not {"-delete", "-exec", "-execdir"} & set(words):
+        if prog == "find" and not FIND_ACTIONS & set(words):
             continue
         if prog in READ_CMDS:
             continue

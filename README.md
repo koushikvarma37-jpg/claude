@@ -58,7 +58,11 @@ motes approve <id> --note "ok, but cc me next time"
 motes approve <id> --trust      # ...and every later call of that tool in this run
 ```
 
-More ideas: [examples/goals.md](examples/goals.md). Or use Docker: `docker compose up -d`.
+More ideas: [examples/goals.md](examples/goals.md). Or use Docker: `docker compose up -d`, then
+`docker compose logs motes` for the dashboard link.
+
+Your settings live in `~/.motes/config.yaml`, which holds only what you change.
+`motes defaults` lists every setting with what it does.
 
 ## Use it from your phone
 
@@ -182,7 +186,7 @@ Ollama. Walkthrough: [training/README.md](training/README.md).
 
 ## Security notes
 
-- The dashboard listens only on `localhost` unless you use `--lan` or `--host`; then it always requires a token.
+- The dashboard listens only on `localhost` unless you use `--lan` or `--host`; then it always requires a token, kept in `~/.motes/token` (readable only by you).
 - Motes can run shell commands as your user. Start with the default policy, which asks before anything external, and loosen it only when you trust your setup.
 - Content the motes read can contain prompt injections. Motes marks it as data and the decision model watches for manipulation, but neither is a guarantee. That's why risky actions wait for you by default.
 - Secrets belong in environment variables (`~/.motes/env` for the systemd unit), not in the config.
@@ -213,8 +217,9 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The tests use scripted fake models, a fake MCP server and Motes' own MCP server over
-real stdio, so they need no GPU or network.
+The tests use scripted fake models, a fake MCP server, Motes' own MCP server over
+real stdio, and the dashboard in headless Chromium (`python -m playwright install chromium`;
+skipped if absent), so they need no GPU or network.
 
 ## License
 

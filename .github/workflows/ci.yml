@@ -17,4 +17,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
+      # Headless Chromium for the dashboard browser test.
+      - run: python -m playwright install --with-deps chromium
+        if: runner.os == 'Linux'
+      - run: python -m playwright install chromium
+        if: runner.os != 'Linux'
       - run: pytest -q

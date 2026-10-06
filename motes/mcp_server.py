@@ -101,9 +101,15 @@ class MotesMCP:
                 for x in self.store.list_approvals("pending")]
 
     def decide(self, a: dict) -> dict:
-        appr = self.store.decide_approval(a["approval_id"], bool(a["approve"]), a.get("note") or "via MCP")
-        if not appr:
+        before = self.store.get_approval(a["approval_id"])
+        if not before:
             raise ValueError("no approval with that id")
+        if before["status"] != "pending":
+            raise ValueError(f"already {before['status']}; nothing changed")
+        approve = bool(a["approve"])
+        note = a.get("note") or "via MCP"
+        appr = self.store.decide_approval(a["approval_id"], approve, note)
+        self.store.log(appr["run_id"], "approval_decided", approval=appr["id"], approved=approve, note=note, via="mcp")
         run = self.store.get_run(appr["run_id"])
         if run and run["status"] == "waiting_approval" and not self.store.has_pending_approvals(run["id"]):
             self.store.update_run(run["id"], status="queued")

@@ -1,7 +1,7 @@
 # Everything in one go: Ollama (the model) and Motes (the agents).
 #   docker compose up -d
 #   docker compose exec ollama ollama pull qwen3:8b
-#   open http://localhost:7777
+#   docker compose logs motes      # prints the dashboard link (it carries an access token)
 # For NVIDIA GPUs, uncomment the deploy block.
 services:
   ollama:
@@ -19,7 +19,7 @@ services:
     ports: ["127.0.0.1:7777:7777"]
     volumes:
       - motes:/data
-      - ./examples/docker-config.yaml:/data/config.yaml
+      - ./examples/docker-config.yaml:/data/config.yaml:ro
     env_file: {path: .env, required: false}
     restart: unless-stopped
 

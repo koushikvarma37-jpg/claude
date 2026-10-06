@@ -52,6 +52,10 @@ def _check_openai(role: str, c: dict) -> bool:
         return False
 
 
+def cmd_defaults(a) -> None:
+    print(Path(config.__file__).with_name("default_config.yaml").read_text())
+
+
 def cmd_setup(a) -> None:
     from .setup import run
     sys.exit(run(a.model, start=not a.no_start))
@@ -106,8 +110,6 @@ def print_qr(text: str) -> None:
 
 
 def cmd_up(a) -> None:
-    import secrets
-
     import uvicorn
 
     from .server import create_app
@@ -116,25 +118,22 @@ def cmd_up(a) -> None:
     host = "0.0.0.0" if a.lan else (a.host or cfg["server"]["host"])
     port = a.port or cfg["server"]["port"]
     local_only = host in ("127.0.0.1", "localhost", "::1")
-    if not local_only and not cfg["server"].get("token"):
-        # Reachable from other devices: never without a token.
-        file_cfg = config.load()
-        file_cfg["server"]["token"] = secrets.token_urlsafe(18)
-        config.save(file_cfg)
-        print("Created an access token for other devices (saved in config.yaml as server.token).")
+    # Reachable from other devices: never without a token. It lives in its own private file.
+    token = config.access_token(create=not local_only)
     rt = _runtime()
-    if a.lan:
-        rt.cfg["server"]["host"] = host
     rt.daemon.start()
-    token = rt.cfg["server"].get("token") or ""
-    local = f"http://localhost:{port}" + (f"/?token={token}" if token else "")
+    suffix = f"/?token={token}" if token else ""
+    browse_host = "localhost" if local_only or host in ("0.0.0.0", "::") else host
+    local = f"http://{browse_host}:{port}{suffix}"
     print(f"Motes {__version__}: {len(rt.registry)} tools, {len(rt.mcp_clients)} apps.")
-    print(f"Dashboard on this computer:  {local}")
-    if not local_only and (ip := lan_ip()):
-        phone = f"http://{ip}:{port}/?token={token}"
+    print(f"Dashboard:  {local}")
+    if host in ("0.0.0.0", "::") and a.lan and (ip := lan_ip()):
+        phone = f"http://{ip}:{port}{suffix}"
         print(f"On your phone (same Wi-Fi):  {phone}")
         print_qr(phone)
         print("Anyone with this link can control your motes. Keep it private.")
+    elif not local_only:
+        print("The dashboard needs the token in that link (also in ~/.motes/token).")
     if not a.no_browser:
         webbrowser.open(local)
     try:
@@ -214,8 +213,8 @@ def _decide(a, approve: bool) -> None:
 
 def cmd_apps(a) -> None:
     catalog = yaml.safe_load(CATALOG.read_text())
-    cfg = config.load()
-    servers = cfg.get("mcp_servers") or []
+    user = config.load_user()
+    servers = user.get("mcp_servers") or []
     installed = {s["name"] for s in servers}
     if a.action == "list":
         for name, spec in catalog.items():
@@ -227,12 +226,10 @@ def cmd_apps(a) -> None:
             sys.exit(f"unknown app {a.name}; see `motes apps`")
         spec = {k: v for k, v in catalog[a.name].items() if k != "about"}
         servers = [s for s in servers if s["name"] != a.name] + [{"name": a.name, **spec}]
-        cfg["mcp_servers"] = servers
-        config.save(cfg)
+        config.update({"mcp_servers": servers})
         print(f"added {a.name}. Restart motes to connect.")
     elif a.action == "remove":
-        cfg["mcp_servers"] = [s for s in servers if s["name"] != a.name]
-        config.save(cfg)
+        config.update({"mcp_servers": [s for s in servers if s["name"] != a.name]})
         print(f"removed {a.name}")
 
 
@@ -275,6 +272,8 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("init", help="write ~/.motes/config.yaml")
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_init)
+
+    sub.add_parser("defaults", help="show every setting, its default and what it does").set_defaults(fn=cmd_defaults)
 
     s = sub.add_parser("setup", help="find Ollama, download a model that fits this computer, save the config")
     s.add_argument("--model", help="use this Ollama model instead of picking one (e.g. qwen3:14b)")

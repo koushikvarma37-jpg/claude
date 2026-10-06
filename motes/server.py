@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import characters
+from . import characters, config
 from . import schedule as sched
 from .runtime import Runtime
 
@@ -40,7 +40,7 @@ class DecisionIn(BaseModel):
 def create_app(rt: Runtime) -> FastAPI:
     app = FastAPI(title="Motes", docs_url="/api/docs")
     store = rt.store
-    token = rt.cfg.get("server", {}).get("token") or ""
+    token = rt.cfg.get("server", {}).get("token") or config.access_token()
 
     def auth(request: Request) -> None:
         if not token:

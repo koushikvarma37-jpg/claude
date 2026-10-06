@@ -19,6 +19,18 @@ from motes.tools.mcp import MCPClient, StdioTransport, register, risk_from_annot
     ("ls 2>&1", "read"),
     ("mkdir -p ~/notes && cd ~/notes && touch todo.txt", "write"),
     ("cd /tmp && ls", "read"),
+    ("cd /tmp\npython3 evil.py", "external"),
+    ("ls\npython3 evil.py", "external"),
+    ("sleep 1 & python3 evil.py", "external"),
+    ("cd $(python3 evil.py)", "external"),
+    ("echo `whoami`", "external"),
+    ("cat <(python3 evil.py)", "external"),
+    ("env python3 evil.py", "external"),
+    ("git branch -D main", "external"),
+    ("git remote add x https://example.com", "external"),
+    ("find . -name x -fprint out.txt", "external"),
+    ("ls &> listing.txt", "write"),
+    ("ls >&2", "read"),
     ("find . -name '*.tmp' -delete", "external"),
     ("curl https://example.com", "external"),
     ("python3 script.py", "external"),
@@ -145,7 +157,7 @@ def test_decision_model_defaults_to_the_brain_and_asks_for_json(monkeypatch):
     sent = {}
 
     class Resp:
-        is_error = False
+        is_error, status_code = False, 200
         def json(self):
             return {"choices": [{"message": {"content": '{"verdict": "approve", "confidence": 0.9, "reason": "ok"}'}}]}
 
@@ -165,3 +177,25 @@ def test_setup_picks_a_model_that_fits():
     assert pick_model({"ram_gb": 16, "vram_gb": 8, "apple_silicon": False})[0] == "qwen3:8b"
     assert pick_model({"ram_gb": 16, "vram_gb": 0, "apple_silicon": False})[0] == "qwen3:4b"
     assert ollama_host("http://localhost:11434/v1/") == "http://localhost:11434"
+
+
+def test_judge_falls_back_when_a_server_refuses_json_mode(monkeypatch):
+    from motes import config
+    from motes.decision import DecisionModel
+    judge = DecisionModel.from_config(config.defaults())
+    calls = []
+
+    class Resp:
+        def __init__(self, code):
+            self.status_code, self.is_error, self.text, self.request = code, code >= 400, "bad", None
+        def json(self):
+            return {"choices": [{"message": {"content": '{"verdict": "deny", "confidence": 0.9, "reason": "no"}'}}]}
+
+    def post(url, json):
+        calls.append(dict(json))
+        return Resp(400 if "response_format" in json else 200)
+
+    monkeypatch.setattr(judge.client._http, "post", post)
+    assert judge.evaluate("g", "send_email", {}, "external").verdict == "deny"
+    assert judge.evaluate("g", "send_email", {}, "external").verdict == "deny"
+    assert [("response_format" in c) for c in calls] == [True, False, False]  # remembered after one refusal

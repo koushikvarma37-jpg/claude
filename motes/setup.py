@@ -176,8 +176,6 @@ def run(model: str | None = None, start: bool = True) -> int:
     if not native:
         print(f"Note: {model} has no native tool calling in Ollama, so Motes will use its text protocol.")
 
-    cfg["brain"]["model"] = model
-    cfg["brain"]["native_tools"] = native
-    config.save(cfg)
+    config.update({"brain": {"model": model, "native_tools": native}})
     print(f"Saved. Brain and decision model: {model}.\nNext:  motes up")
     return 0
