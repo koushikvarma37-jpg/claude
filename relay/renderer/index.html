@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self'" />
+<title>Relay</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app" id="app">
+  <header class="titlebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="2" y="13" width="9" height="8" rx="1.5" class="coil" />
+        <path d="M2.8 15.5l7.4 3" class="coil-line" />
+        <circle cx="14" cy="17" r="1.6" class="term" />
+        <circle cx="21" cy="17" r="1.6" class="term" />
+        <circle cx="21" cy="6" r="1.6" class="term dim" />
+        <path d="M14 17 L21 8" class="lever" />
+      </svg>
+      <span class="brand-name">Relay</span>
+      <span class="status" id="status" data-state="ready"><i></i><span id="statusText">Ready</span></span>
+    </div>
+    <div class="win-actions">
+      <button class="icon-btn" id="newBtn" title="New conversation (Ctrl+N)" aria-label="New conversation">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button class="icon-btn" id="minBtn" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+      <button class="icon-btn close" id="closeBtn" title="Quit Relay" aria-label="Quit Relay"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+  </header>
+
+  <main class="feed" id="feed" aria-live="polite">
+    <section class="empty" id="empty">
+      <div class="contact" aria-hidden="true">
+        <svg viewBox="0 0 120 70">
+          <rect x="6" y="38" width="40" height="26" rx="4" class="coil" />
+          <path d="M10 44 L42 58 M10 52 L30 61 M22 41 L42 50" class="coil-line" />
+          <path d="M46 51 H62" class="wire" />
+          <circle cx="66" cy="51" r="4" class="term" />
+          <circle cx="110" cy="51" r="4" class="term" />
+          <circle cx="110" cy="14" r="4" class="term dim" />
+          <path d="M66 51 L108 22" class="lever" />
+        </svg>
+      </div>
+      <h1>What should I do?</h1>
+      <p class="sub">Type a command or press the mic and say it.</p>
+      <div class="chips" id="chips">
+        <button>Sort my Downloads folder</button>
+        <button>Make a folder called DSP notes on the desktop</button>
+        <button>Open WhatsApp</button>
+        <button>Find my resume</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="composer">
+    <form class="bar" id="bar" autocomplete="off">
+      <button type="button" class="mic" id="micBtn" title="Speak a command (Ctrl+M)" aria-label="Speak a command">
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <div class="field">
+        <input id="input" placeholder="Tell Relay what to do…" aria-label="Command" maxlength="2000" />
+        <canvas id="wave" hidden></canvas>
+      </div>
+      <button type="submit" class="send" id="sendBtn" title="Run (Enter)" aria-label="Run">
+        <svg viewBox="0 0 24 24" class="i-send"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        <svg viewBox="0 0 24 24" class="i-stop"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+      </button>
+    </form>
+    <div class="hint" id="hint"><kbd>Enter</kbd> run · <kbd>Ctrl</kbd>+<kbd>M</kbd> talk · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> show or hide</div>
+  </footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="sheet" id="sheet" aria-label="Settings" hidden>
+    <div class="sheet-head">
+      <h2>Settings</h2>
+      <button class="icon-btn" id="sheetClose" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <section class="group">
+        <label for="keyInput" class="lbl">Gemini API key</label>
+        <div class="row">
+          <input id="keyInput" type="password" placeholder="Paste your key" spellcheck="false" />
+          <button class="btn" id="keySave" type="button">Save</button>
+        </div>
+        <p class="help" id="keyHelp">Get a free key at <a href="#" data-link="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>. It's stored encrypted on this PC.</p>
+      </section>
+      <section class="group">
+        <label for="modelSelect" class="lbl">Model</label>
+        <div class="row">
+          <select id="modelSelect"></select>
+          <button class="btn ghost" id="modelRefresh" type="button">Refresh list</button>
+        </div>
+        <p class="help" id="modelHelp">"gemini-flash-latest" always uses Google's newest fast model.</p>
+      </section>
+      <section class="group">
+        <label class="toggle"><input type="checkbox" id="speakToggle" /><span class="track"><i></i></span><span>Speak short replies when I use my voice</span></label>
+        <label class="toggle"><input type="checkbox" id="autoRunToggle" /><span class="track"><i></i></span><span>Run voice commands straight away, without showing the transcript first</span></label>
+      </section>
+      <section class="group">
+        <div class="lbl">Shortcuts</div>
+        <dl class="keys">
+          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></dt><dd>Show or hide Relay from anywhere</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></dt><dd>Open Relay and start listening</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>M</kbd></dt><dd>Start or stop the mic</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Cancel, or hide the window</dd>
+        </dl>
+      </section>
+    </div>
+  </aside>
+</div>
+<script src="recorder.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

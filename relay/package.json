@@ -1,0 +1,20 @@
+{
+  "name": "relay",
+  "productName": "Relay",
+  "version": "1.0.0",
+  "description": "Relay: an AI desktop agent for Windows. Type or speak a command and Relay does it.",
+  "main": "main.js",
+  "author": "Teja Varma",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.27.0"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
