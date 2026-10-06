@@ -12,7 +12,7 @@ The site is a single `index.html` with no build step. It loads fonts from Google
 - **Orbit console**: a simulated app where commands flow through Command → Understand → Plan → Execute
 - Skills as a 14-pin IC pinout (pin 7 GND, pin 14 VCC, like 74-series logic)
 - Scroll-driven transitions with GSAP; everything stays visible if scripts fail to load
-- Responsive, and respects reduced-motion settings
+- Responsive; with reduced motion on, animations slow down and become fades instead of switching off
 
 ## ▶️ View locally
 

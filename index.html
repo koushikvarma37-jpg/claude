@@ -362,9 +362,11 @@ footer { border-top: 1px solid var(--ink); }
 /* Theme switch wipe */
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 
+/* Reduced motion: keep the page alive, but slower and without travel */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
+  .band-track { animation-duration: 140s; }
+  .blk .wire-pulse { animation: none; opacity: 0; }
 }
 </style>
 <script>
@@ -668,11 +670,12 @@ footer { border-top: 1px solid var(--ink); }
       try { localStorage.setItem("tv-theme", root.dataset.theme); } catch (err) {}
       syncMode();
     };
-    if (!document.startViewTransition || reduce) return apply();
+    if (!document.startViewTransition) return apply();
     const x = e ? e.clientX : innerWidth - 60, y = e ? e.clientY : 30;
     const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
     document.startViewTransition(apply).ready.then(() => {
-      root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+      if (reduce) root.animate({ opacity: [0, 1] }, { duration: 450, easing: "ease-out", pseudoElement: "::view-transition-new(root)" });
+      else root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
         { duration: 750, easing: "cubic-bezier(.16,1,.3,1)", pseudoElement: "::view-transition-new(root)" });
     }).catch(() => {});
   }
@@ -718,7 +721,7 @@ footer { border-top: 1px solid var(--ink); }
   new ResizeObserver(size).observe(screen); size();
   screen.addEventListener("pointermove", e => { const r = screen.getBoundingClientRect(); hoverX = (e.clientX - r.left) / r.width; });
   screen.addEventListener("pointerleave", () => { hoverX = null; cursorRo.textContent = "TRIG ↑ curiosity"; });
-  new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible && !reduce) requestAnimationFrame(frame); }).observe(screen);
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) requestAnimationFrame(frame); }).observe(screen);
 
   const CYCLE = 9000, MAXN = 25;
   function square(x, n, phase) {
@@ -741,8 +744,7 @@ footer { border-top: 1px solid var(--ink); }
     const p = ((t - start) % CYCLE) / CYCLE;               // 0..1 learning cycle
     const grow = Math.min(1, p / 0.7);                      // harmonics build over 70% of cycle
     let n = hoverX != null ? Math.max(1, Math.round(hoverX * 40)) : Math.max(1, Math.round(1 + grow * (MAXN - 1)));
-    if (reduce) n = 15;
-    const phase = reduce ? 0 : t * 0.0009;
+    const phase = t * (reduce ? 0.0004 : 0.0009);
     const cycles = 2.5, k = Math.PI * 2 * cycles / W;
 
     // CH1: Fourier square wave
@@ -753,7 +755,7 @@ footer { border-top: 1px solid var(--ink); }
     ctx.stroke(); ctx.restore();
 
     // CH2: noisy signal that "learns"
-    const noise = reduce ? 0.04 : Math.max(0.03, 1 - grow) * (hoverX != null ? hoverX : 1);
+    const noise = Math.max(0.03, 1 - grow) * (hoverX != null ? hoverX : 1);
     const a2 = H * 0.12, y2 = H * 0.72;
     ctx.save(); ctx.lineWidth = 1.6; ctx.strokeStyle = colors.t2; ctx.shadowColor = colors.t2; ctx.shadowBlur = 8;
     ctx.beginPath();
@@ -776,8 +778,8 @@ footer { border-top: 1px solid var(--ink); }
     }
   }
   function frame(t) { if (!visible) return; draw(t); requestAnimationFrame(frame); }
-  if (reduce) draw(performance.now()); else requestAnimationFrame(frame);
-  new MutationObserver(() => { readColors(); if (reduce) draw(performance.now()); }).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+  requestAnimationFrame(frame);
+  new MutationObserver(readColors).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
 
   /* ---------- Orbit console simulation ---------- */
   const log = $("#log"), stages = $$(".st"), fill = $("#pipeFill"), cmdIn = $("#cmdIn");
@@ -799,7 +801,7 @@ footer { border-top: 1px solid var(--ink); }
       add((k + ":").padEnd(9) + v, i === steps.length - 1 ? "d" : "s");
       setStage(i + 1);
       if (i === steps.length - 1) busy = false;
-    }, reduce ? 0 : 650 * (i + 1)));
+    }, 650 * (i + 1)));
   }
   function run(raw) {
     const cmd = raw.trim(); if (!cmd || busy) return;
@@ -884,7 +886,7 @@ footer { border-top: 1px solid var(--ink); }
   $$("tr[data-pin]", tbody).forEach(tr => tr.addEventListener("pointerenter", () => { userTouched = true; setHot(+tr.dataset.pin.split(",")[0]); }));
   const order = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14];
   setHot(1);
-  if (!reduce) setInterval(() => { if (userTouched) return; cycleI = (cycleI + 1) % order.length; setHot(order[cycleI]); }, 1700);
+  setInterval(() => { if (userTouched) return; cycleI = (cycleI + 1) % order.length; setHot(order[cycleI]); }, 1700);
 
   /* ---------- Contact ---------- */
   $("#copyBtn").addEventListener("click", async () => {
@@ -900,42 +902,44 @@ footer { border-top: 1px solid var(--ink); }
   /* ---------- Motion (GSAP) ---------- */
   // Split the name into letters for the intro
   $$(".split").forEach(s => { s.innerHTML = [...s.textContent].map(c => `<span class="ch">${c}</span>`).join(""); });
-  if (reduce || !window.gsap) return;
+  if (!window.gsap) return;
   gsap.registerPlugin(ScrollTrigger);
   const ease = "expo.out";
+  const mv = reduce ? 0 : 1;   // reduced motion: same reveals as fades, no travel
 
   const intro = gsap.timeline({ defaults: { ease } });
   intro
-    .from(".name .ch", { yPercent: 105, duration: 1.1, stagger: .045 })
-    .from(".part", { autoAlpha: 0, x: -12, duration: .6 }, "-=.6")
-    .from("[data-hero]", { autoAlpha: 0, y: 24, duration: .9, stagger: .12 }, "-=.9")
-    .fromTo("#scopeBox", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 1.3, ease: "power4.inOut" }, "-=1.1")
+    .from(".name .ch", reduce ? { autoAlpha: 0, duration: .8, stagger: .04 } : { yPercent: 105, duration: 1.1, stagger: .045 })
+    .from(".part", { autoAlpha: 0, x: -12 * mv, duration: .6 }, "-=.6")
+    .from("[data-hero]", { autoAlpha: 0, y: 24 * mv, duration: .9, stagger: .12 }, "-=.9")
+    .fromTo("#scopeBox", reduce ? { autoAlpha: 0 } : { clipPath: "inset(0 100% 0 0)" }, reduce ? { autoAlpha: 1, duration: .9 } : { clipPath: "inset(0 0% 0 0)", duration: 1.3, ease: "power4.inOut" }, "-=1.1")
     .add(() => { start = performance.now(); }, "<");
 
   // Band drifts with scroll
-  gsap.to(".band-track", { xPercent: -8, ease: "none", scrollTrigger: { trigger: ".band", start: "top bottom", end: "bottom top", scrub: true } });
+  if (!reduce) gsap.to(".band-track", { xPercent: -8, ease: "none", scrollTrigger: { trigger: ".band", start: "top bottom", end: "bottom top", scrub: true } });
 
   // Section labels count in
   $$(".sec").forEach(sec => {
-    gsap.from($(".sec-label", sec), { autoAlpha: 0, x: -16, duration: .9, ease, scrollTrigger: { trigger: sec, start: "top 80%" } });
+    gsap.from($(".sec-label", sec), { autoAlpha: 0, x: -16 * mv, duration: .9, ease, scrollTrigger: { trigger: sec, start: "top 80%" } });
   });
 
   // Headings: rise from a mask
   $$("h2[data-rise]").forEach(h => {
-    gsap.fromTo(h, { clipPath: "inset(0 0 100% 0)", y: 40 }, { clipPath: "inset(0 0 -10% 0)", y: 0, duration: 1.2, ease, scrollTrigger: { trigger: h, start: "top 88%" } });
+    if (reduce) gsap.from(h, { autoAlpha: 0, duration: 1, scrollTrigger: { trigger: h, start: "top 88%" } });
+    else gsap.fromTo(h, { clipPath: "inset(0 0 100% 0)", y: 40 }, { clipPath: "inset(0 0 -10% 0)", y: 0, duration: 1.2, ease, scrollTrigger: { trigger: h, start: "top 88%" } });
   });
   $$("[data-rise]:not(h2)").forEach(n => {
-    gsap.from(n, { autoAlpha: 0, y: 36, duration: 1, ease, scrollTrigger: { trigger: n, start: "top 88%" } });
+    gsap.from(n, { autoAlpha: 0, y: 36 * mv, duration: 1, ease, scrollTrigger: { trigger: n, start: "top 88%" } });
   });
   $$("[data-stagger]").forEach(g => {
-    gsap.from(g.children, { autoAlpha: 0, y: 26, duration: .9, stagger: .09, ease, scrollTrigger: { trigger: g, start: "top 85%" } });
+    gsap.from(g.children, { autoAlpha: 0, y: 26 * mv, duration: .9, stagger: .09, ease, scrollTrigger: { trigger: g, start: "top 85%" } });
   });
 
   // Chip: leads extend out of the package, body drops in
-  gsap.from("#chip .body, #chip .notch", { scaleY: .85, transformOrigin: "50% 50%", autoAlpha: 0, duration: 1, ease, scrollTrigger: { trigger: "#chip", start: "top 80%" } });
+  gsap.from("#chip .body, #chip .notch", { scaleY: reduce ? 1 : .85, transformOrigin: "50% 50%", autoAlpha: 0, duration: 1, ease, scrollTrigger: { trigger: "#chip", start: "top 80%" } });
   gsap.from("#chip .lead", { scaleX: 0, transformOrigin: (i, t) => (+t.parentNode.dataset.pin <= 7 ? "100% 50%" : "0% 50%"), duration: .7, stagger: .04, ease, scrollTrigger: { trigger: "#chip", start: "top 75%" } });
   gsap.from("#chip .pname", { autoAlpha: 0, duration: .5, stagger: .04, delay: .3, scrollTrigger: { trigger: "#chip", start: "top 75%" } });
-  gsap.from("#pinTable tbody tr", { autoAlpha: 0, x: 20, duration: .7, stagger: .05, ease, scrollTrigger: { trigger: "#pinTable", start: "top 85%" } });
+  gsap.from("#pinTable tbody tr", { autoAlpha: 0, x: 20 * mv, duration: .7, stagger: .05, ease, scrollTrigger: { trigger: "#pinTable", start: "top 85%" } });
 
   // Field log: square-wave icons draw on
   $$(".run svg path").forEach(p => {
@@ -944,10 +948,10 @@ footer { border-top: 1px solid var(--ink); }
   });
 
   // Ratings rows
-  gsap.from(".ratings tbody tr", { autoAlpha: 0, y: 16, duration: .7, stagger: .08, ease, scrollTrigger: { trigger: ".ratings", start: "top 85%" } });
+  gsap.from(".ratings tbody tr", { autoAlpha: 0, y: 16 * mv, duration: .7, stagger: .08, ease, scrollTrigger: { trigger: ".ratings", start: "top 85%" } });
 
   // Magnetic buttons
-  if (matchMedia("(pointer: fine)").matches) {
+  if (!reduce && matchMedia("(pointer: fine)").matches) {
     $$(".btn").forEach(b => {
       b.addEventListener("pointermove", e => { const r = b.getBoundingClientRect(); gsap.to(b, { x: (e.clientX - r.left - r.width / 2) * .18, y: (e.clientY - r.top - r.height / 2) * .3, duration: .5, ease: "power3.out" }); });
       b.addEventListener("pointerleave", () => gsap.to(b, { x: 0, y: 0, duration: .8, ease: "elastic.out(1, .4)" }));
