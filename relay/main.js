@@ -28,6 +28,25 @@ function getClient() {
   return client;
 }
 
+// Backup models for when the chosen one is busy: fast "flash" models this key can use, best first.
+let fallbackCache = null;
+async function getFallbackModels() {
+  if (fallbackCache) return fallbackCache;
+  const preferred = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"];
+  let available = [];
+  try {
+    const pager = await getClient().models.list({ config: { pageSize: 100 } });
+    for await (const m of pager) {
+      const name = String(m.name || "").replace(/^models\//, "");
+      const actions = m.supportedActions || [];
+      if (/^gemini.*flash/.test(name) && !/tts|image|live|audio|embedding|preview/i.test(name) && (!actions.length || actions.includes("generateContent"))) available.push(name);
+    }
+  } catch { available = []; }
+  const ordered = [...preferred.filter((n) => available.includes(n)), ...available.filter((n) => !preferred.includes(n)).sort().reverse()];
+  fallbackCache = (ordered.length ? ordered : preferred).filter((n) => n !== settings.get("model"));
+  return fallbackCache;
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 760, height: 620, minWidth: 520, minHeight: 440,
@@ -62,6 +81,7 @@ app.whenReady().then(() => {
   agent = createAgent({
     getClient, toolkit, paths,
     getModel: () => settings.get("model") || "gemini-flash-latest",
+    getFallbackModels,
     onEvent: send,
     askConfirm: (plan) => new Promise((resolve) => {
       const id = `c${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -109,7 +129,7 @@ ipcMain.on("relay:stop", () => { agent.stop(); for (const [id, r] of pendingConf
 ipcMain.on("relay:reset", () => agent.reset());
 
 ipcMain.handle("settings:get", () => ({ ...settings.publicView(), shortcuts: { show: SHOW_SHORTCUT, voice: VOICE_SHORTCUT } }));
-ipcMain.handle("settings:set", (_e, patch) => settings.update(patch || {}));
+ipcMain.handle("settings:set", (_e, patch) => { fallbackCache = null; return settings.update(patch || {}); });
 ipcMain.handle("settings:models", async () => {
   try {
     const ai = getClient();

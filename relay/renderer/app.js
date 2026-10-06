@@ -201,9 +201,11 @@
   window.relay.onEvent((ev) => {
     if (ev.type === "focus-input") { input.focus(); return; }
     if (ev.type === "start-voice") { if (!listening) toggleMic(); return; }
+    if (ev.type === "retry" && transcribing) { setHint(esc(ev.message), true); return; }
     const turn = currentTurn;
     if (!turn || (ev.turnId && ev.turnId !== turn.id)) return;
-    if (ev.type === "thinking") { showThinking(turn, true); setStatus("thinking", "Thinking"); }
+    if (ev.type === "thinking") { showThinking(turn, true); turn.thinkingEl.lastElementChild.textContent = "Thinking"; setStatus("thinking", "Thinking"); }
+    if (ev.type === "retry") { showThinking(turn, true); turn.thinkingEl.lastElementChild.textContent = ev.message; setStatus("thinking", "Retrying"); }
     if (ev.type === "step") { addStep(turn, ev); setStatus("working", "Working"); }
     if (ev.type === "step-update") updateStep(turn, ev);
     if (ev.type === "confirm") showConfirm(turn, ev);

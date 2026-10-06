@@ -37,9 +37,11 @@ How to reply:
 - If a command is unclear or the transcript looks garbled, ask a short clarifying question instead of guessing.`;
 }
 
-function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm }) {
+function createAgent({ getClient, getModel, getFallbackModels = async () => [], toolkit, paths, onEvent, askConfirm, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let history = [];
   let stopRequested = false;
+  let preferredFallback = null; // a model that worked when the main one was busy; reused for a while
+  let fallbackUntil = 0;
 
   function trimHistory() {
     if (history.length <= HISTORY_LIMIT) return;
@@ -47,6 +49,44 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
     let cut = history.length - HISTORY_LIMIT;
     while (cut < history.length && !(history[cut].role === "user" && history[cut].parts.some((p) => p.text))) cut++;
     history = history.slice(cut);
+  }
+
+  /**
+   * Calls Gemini and survives busy servers:
+   * retries the same model with a short backoff, then (if allowed) tries other fast models.
+   */
+  async function callModel(ai, request, { turnId, allowSwitch }) {
+    const primary = Date.now() < fallbackUntil && preferredFallback ? preferredFallback : getModel();
+    const models = [primary];
+    let lastErr;
+    for (let m = 0; m < models.length; m++) {
+      const model = models[m];
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (stopRequested) throw Object.assign(new Error("Stopped."), { code: "STOPPED" });
+        try {
+          const res = await ai.models.generateContent({ ...request, model });
+          if (model !== getModel()) { preferredFallback = model; fallbackUntil = Date.now() + 10 * 60 * 1000; }
+          else { preferredFallback = null; fallbackUntil = 0; }
+          return { res, model };
+        } catch (err) {
+          lastErr = err;
+          const kind = errorKind(err);
+          if (kind === "missing") break;            // model not available to this key: try the next one
+          if (kind !== "busy") throw err;           // key/quota/network problems: retrying won't help
+          if (attempt < 2) {
+            onEvent({ type: "retry", turnId, message: "Gemini is busy, retrying…" });
+            await sleep(attempt === 0 ? 800 : 2000);
+          }
+        }
+      }
+      if (allowSwitch && m === models.length - 1 && models.length === 1) {
+        const extra = (await getFallbackModels().catch(() => [])).filter((x) => !models.includes(x));
+        models.push(...extra.slice(0, 3));
+      }
+      if (allowSwitch && models[m + 1]) onEvent({ type: "retry", turnId, message: "Gemini is busy, switching to a backup model…" });
+      if (!allowSwitch) break;
+    }
+    throw lastErr;
   }
 
   async function execute(call, turnId, stepId) {
@@ -67,31 +107,38 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
   async function run(text, { turnId }) {
     stopRequested = false;
     const ai = getClient();
-    const model = getModel();
     trimHistory();
     const startLen = history.length;
     history.push({ role: "user", parts: [{ text }] });
+    const done = []; // summaries of steps that really happened in this turn
     try {
-      return await loop(ai, model, turnId);
+      return await loop(ai, turnId, done);
     } catch (err) {
-      history = history.slice(0, startLen); // drop the half-finished turn so the next command starts clean
+      if (done.length) {
+        // The actions already happened; only Gemini's closing sentence failed.
+        // Report what was done instead of an error, and close the turn cleanly.
+        const summary = done.join(". ") + ".";
+        history.push({ role: "model", parts: [{ text: summary }] });
+        return { text: err.code === "STOPPED" ? `Stopped. ${summary}` : summary, partial: true };
+      }
+      history = history.slice(0, startLen); // nothing happened: drop the turn so the next command starts clean
+      if (err.code === "STOPPED") return { text: "Stopped." };
       throw err;
     }
   }
 
-  async function loop(ai, model, turnId) {
+  async function loop(ai, turnId, done) {
     for (let step = 0; step < MAX_STEPS; step++) {
-      if (stopRequested) return { text: "Stopped." };
+      if (stopRequested) throw Object.assign(new Error("Stopped."), { code: "STOPPED" });
       onEvent({ type: "thinking", turnId });
-      const res = await ai.models.generateContent({
-        model,
+      const { res } = await callModel(ai, {
         contents: history,
         config: {
           systemInstruction: systemPrompt(paths, new Date()),
           tools: [{ functionDeclarations: toolkit.declarations }],
           temperature: 0.2,
         },
-      });
+      }, { turnId, allowSwitch: step === 0 }); // switching models mid-task would break Gemini's step signatures
       const content = res.candidates && res.candidates[0] && res.candidates[0].content;
       if (!content || !content.parts) {
         const reason = res.candidates?.[0]?.finishReason || res.promptFeedback?.blockReason;
@@ -100,7 +147,7 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
       history.push(content); // keep the model's turn as-is (includes thought signatures)
 
       const calls = res.functionCalls || [];
-      if (!calls.length) return { text: (res.text || "").trim() || "Done." };
+      if (!calls.length) return { text: (res.text || "").trim() || (done.length ? done.join(". ") + "." : "Done.") };
 
       const responses = [];
       for (const call of calls) {
@@ -109,7 +156,9 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
         let result;
         try {
           result = await execute(call, turnId, stepId);
-          onEvent({ type: "step-update", turnId, stepId, state: result.declined ? "cancelled" : result.error ? "failed" : "done", detail: result.summary || result.error, undoable: !!result.undoable });
+          const state = result.declined ? "cancelled" : result.error ? "failed" : "done";
+          if (state === "done" && result.summary && !/^(Found|Nothing found|.*: \d+ folders)/.test(result.summary)) done.push(result.summary);
+          onEvent({ type: "step-update", turnId, stepId, state, detail: result.summary || result.error, undoable: !!result.undoable });
         } catch (err) {
           result = { error: err.message };
           onEvent({ type: "step-update", turnId, stepId, state: "failed", detail: err.message });
@@ -122,9 +171,9 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
   }
 
   async function transcribe(base64Wav) {
+    stopRequested = false;
     const ai = getClient();
-    const res = await ai.models.generateContent({
-      model: getModel(),
+    const { res } = await callModel(ai, {
       contents: [{
         role: "user",
         parts: [
@@ -136,7 +185,7 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
         ],
       }],
       config: { temperature: 0 },
-    });
+    }, { turnId: null, allowSwitch: true });
     const t = (res.text || "").trim().replace(/^["']|["']$/g, "");
     return t === "[no speech]" ? "" : t;
   }
@@ -147,6 +196,15 @@ function createAgent({ getClient, getModel, toolkit, paths, onEvent, askConfirm 
     stop: () => { stopRequested = true; },
     reset: () => { history = []; },
   };
+}
+
+/** busy = worth retrying; missing = model not available to this key; other = stop */
+function errorKind(err) {
+  const msg = String((err && err.message) || err);
+  const status = err && (err.status || err.code);
+  if (status === 503 || status === 500 || status === 504 || /UNAVAILABLE|overloaded|INTERNAL|DEADLINE_EXCEEDED|try again later/i.test(msg)) return "busy";
+  if (status === 404 || /is not found|NOT_FOUND|not supported for generateContent/i.test(msg)) return "missing";
+  return "other";
 }
 
 /** Turn API errors into messages a person can act on. */
@@ -161,4 +219,4 @@ function friendlyError(err) {
   return msg;
 }
 
-module.exports = { createAgent, friendlyError, systemPrompt };
+module.exports = { createAgent, friendlyError, systemPrompt, errorKind };

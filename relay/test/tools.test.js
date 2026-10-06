@@ -219,3 +219,59 @@ test("apps: matches what people say to real Start menu names", async () => {
   const miss = await apps.launch("photoshop");
   assert.equal(miss.ok, false);
 });
+
+// ---------- Busy-server handling ----------
+function fakeGemini(script) {
+  const calls = [];
+  return { calls, client: { models: { generateContent: async (req) => {
+    calls.push(req.model);
+    const step = script.shift();
+    if (step instanceof Error) throw step;
+    const fc = step.functionCalls || [];
+    const parts = fc.length ? fc.map((c) => ({ functionCall: c })) : [{ text: step.text }];
+    return { candidates: [{ content: { role: "model", parts } }], functionCalls: fc, text: step.text };
+  } } } };
+}
+const busy = () => Object.assign(new Error("The model is overloaded. Please try again later."), { status: 503 });
+
+test("busy: retries the same model, then succeeds", async () => {
+  const sb = sandbox();
+  const g = fakeGemini([busy(), { text: "Hello" }]);
+  const events = [];
+  const agent = createAgent({ getClient: () => g.client, getModel: () => "main", toolkit: sb.toolkit, paths: sb.paths, onEvent: (e) => events.push(e), askConfirm: async () => true, sleep: async () => {} });
+  assert.equal((await agent.run("hi", { turnId: "t" })).text, "Hello");
+  assert.deepEqual(g.calls, ["main", "main"]);
+  assert.ok(events.some((e) => e.type === "retry"));
+});
+
+test("busy: switches to a backup model when the main one stays busy", async () => {
+  const sb = sandbox();
+  const g = fakeGemini([busy(), busy(), busy(), { text: "From backup" }]);
+  const agent = createAgent({ getClient: () => g.client, getModel: () => "main", getFallbackModels: async () => ["backup"], toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true, sleep: async () => {} });
+  assert.equal((await agent.run("hi", { turnId: "t" })).text, "From backup");
+  assert.deepEqual(g.calls, ["main", "main", "main", "backup"]);
+});
+
+test("busy after an action: reports what was done instead of an error", async () => {
+  const sb = sandbox();
+  const g = fakeGemini([{ functionCalls: [{ id: "1", name: "open_app", args: { name: "WhatsApp" } }] }, busy(), busy(), busy()]);
+  const agent = createAgent({ getClient: () => g.client, getModel: () => "main", getFallbackModels: async () => ["backup"], toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true, sleep: async () => {} });
+  const out = await agent.run("open whatsapp", { turnId: "t" });
+  assert.equal(out.text, "Opened WhatsApp.");
+  assert.equal(out.partial, true);
+  assert.ok(!g.calls.includes("backup"), "never switches model in the middle of a task");
+  // the next command still works with a clean, well-formed history
+  g.client.models.generateContent = async (req) => {
+    assert.equal(req.contents.at(-2).role, "model");
+    return { candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }], functionCalls: [], text: "ok" };
+  };
+  assert.equal((await agent.run("next", { turnId: "u" })).text, "ok");
+});
+
+test("a bad key is not retried", async () => {
+  const sb = sandbox();
+  const g = fakeGemini([Object.assign(new Error("API key not valid"), { status: 400 })]);
+  const agent = createAgent({ getClient: () => g.client, getModel: () => "main", toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true, sleep: async () => {} });
+  await assert.rejects(agent.run("hi", { turnId: "t" }), /API key/);
+  assert.equal(g.calls.length, 1);
+});
