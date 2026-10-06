@@ -15,15 +15,55 @@ const ALIASES = {
   whatsapp: "whatsapp", spotify: "spotify", telegram: "telegram", discord: "discord", zoom: "zoom", teams: "teams",
 };
 
-// Apps that are always present and launch fine by command
+// Apps that are always present: opened by URI or exe name, no window check needed
 const BUILTIN = [
-  { Name: "File Explorer", run: ["explorer.exe", []] },
-  { Name: "Settings", run: ["explorer.exe", ["ms-settings:"]] },
-  { Name: "Notepad", run: ["notepad.exe", []] },
-  { Name: "Calculator", run: ["explorer.exe", ["calculator:"]] },
-  { Name: "Command Prompt", run: ["cmd.exe", ["/c", "start", "cmd.exe"]] },
-  { Name: "Task Manager", run: ["taskmgr.exe", []] },
+  { Name: "File Explorer", uri: "explorer.exe" },
+  { Name: "Settings", uri: "ms-settings:" },
+  { Name: "Notepad", uri: "notepad.exe" },
+  { Name: "Calculator", uri: "calculator:" },
+  { Name: "Command Prompt", uri: "cmd.exe" },
+  { Name: "Task Manager", uri: "taskmgr.exe" },
 ];
+
+// Starts the app, then waits up to 8 s for its window, restores it if minimized and brings it to the front.
+// Inputs come in through environment variables so no app name is ever pasted into the script itself.
+const LAUNCH_PS = String.raw`
+$ErrorActionPreference = 'Stop'
+try {
+  if ($env:RELAY_URI) { Start-Process $env:RELAY_URI } else { Start-Process ('shell:AppsFolder\' + $env:RELAY_APPID) }
+} catch { @{ status = 'launch_failed'; error = $_.Exception.Message } | ConvertTo-Json -Compress; exit }
+if ($env:RELAY_NOVERIFY) { @{ status = 'window' } | ConvertTo-Json -Compress; exit }
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class RelayWin {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
+}
+"@
+$patterns = $env:RELAY_MATCH.Split('|') | Where-Object { $_ }
+function Test-Match($p) { foreach ($m in $patterns) { if ($p.ProcessName -like "*$m*" -or $p.MainWindowTitle -like "*$m*") { return $true } }; return $false }
+$deadline = (Get-Date).AddSeconds(8)
+$proc = $null
+while ((Get-Date) -lt $deadline) {
+  $proc = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Id -ne $PID -and (Test-Match $_) } | Select-Object -First 1
+  if ($proc) { break }
+  Start-Sleep -Milliseconds 350
+}
+if ($proc) {
+  $h = $proc.MainWindowHandle
+  if ([RelayWin]::IsIconic($h)) { [RelayWin]::ShowWindow($h, 9) | Out-Null }
+  [RelayWin]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [RelayWin]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+  [RelayWin]::SetForegroundWindow($h) | Out-Null
+  @{ status = 'window'; title = $proc.MainWindowTitle } | ConvertTo-Json -Compress
+} elseif (@(Get-Process | Where-Object { Test-Match $_ }).Count) {
+  @{ status = 'no_window' } | ConvertTo-Json -Compress
+} else {
+  @{ status = 'not_running' } | ConvertTo-Json -Compress
+}
+`;
+const LAUNCH_PS_B64 = Buffer.from(LAUNCH_PS, "utf16le").toString("base64");
 
 function createApps({ platform = process.platform, exec = execFile } = {}) {
   let cache = null;
@@ -73,18 +113,35 @@ function createApps({ platform = process.platform, exec = execFile } = {}) {
     return ranked;
   }
 
+  /** Words to recognise the app's process or window title by, e.g. "Visual Studio Code" → visual studio code|visual */
+  function matchPatterns(app) {
+    const words = clean(app.Name).split(" ").filter((w) => w.length >= 3 && !["the", "app", "for", "microsoft", "desktop"].includes(w));
+    const set = new Set([app.Name, ...words.slice(0, 2)]);
+    if (/visual studio code/i.test(app.Name)) set.add("Code");
+    return [...set].join("|");
+  }
+
   async function launch(name) {
     const ranked = await find(name);
     const best = ranked[0];
-    if (!best || best.s < 45) return { ok: false, suggestions: ranked.slice(0, 5).map((x) => x.a.Name) };
+    if (!best || best.s < 45) return { ok: false, reason: "not_found", suggestions: ranked.slice(0, 5).map((x) => x.a.Name) };
     const app = best.a;
-    const [cmd, args] = app.run || ["explorer.exe", [`shell:AppsFolder\\${app.AppID}`]];
-    await new Promise((resolve, reject) => {
-      const child = exec(cmd, args, { windowsHide: true }, () => resolve()); // explorer.exe returns exit code 1 even on success
-      if (child && child.on) child.on("error", reject);
-      setTimeout(resolve, 1500);
+    const env = { ...process.env, RELAY_MATCH: matchPatterns(app) };
+    if (app.uri) { env.RELAY_URI = app.uri; env.RELAY_NOVERIFY = "1"; } else env.RELAY_APPID = app.AppID;
+
+    const out = await new Promise((resolve) => {
+      exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", LAUNCH_PS_B64],
+        { windowsHide: true, timeout: 20000, env }, (err, stdout) => {
+          try { resolve(JSON.parse(String(stdout).trim().split(/\r?\n/).pop())); }
+          catch { resolve({ status: "unknown", error: err ? err.message : "" }); }
+        });
     });
-    return { ok: true, name: app.Name };
+
+    if (out.status === "window") return { ok: true, name: app.Name };
+    if (out.status === "no_window") return { ok: true, name: app.Name, warning: `${app.Name} is running, but its window didn't appear. It may be in the system tray (the ^ arrow near the clock).` };
+    if (out.status === "launch_failed") return { ok: false, reason: "failed", error: `Windows couldn't start ${app.Name}: ${out.error}` };
+    if (out.status === "not_running") return { ok: false, reason: "failed", error: `Windows didn't start ${app.Name}. Try opening it once from the Start menu, then ask again.` };
+    return { ok: false, reason: "failed", error: `Couldn't confirm that ${app.Name} opened.` };
   }
 
   return { load, find, launch };

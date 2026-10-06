@@ -124,6 +124,8 @@
         const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Undoing…";
         const r = await window.relay.undo();
         btn.textContent = r.ok ? "Undone" : "Couldn't undo";
+        const reply = r.ok && li.closest(".turn").querySelector(".reply");
+        if (reply && !reply.classList.contains("undone")) { reply.classList.add("undone"); reply.insertAdjacentHTML("beforeend", '<span class="undone-tag">Undone</span>'); }
         li.querySelector(".st-detail").textContent = r.ok ? r.summary : r.error;
       });
     }

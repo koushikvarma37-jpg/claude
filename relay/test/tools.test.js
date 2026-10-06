@@ -198,26 +198,46 @@ test("agent: an API error leaves history clean for the next command", async () =
   assert.equal((await agent.run("two", { turnId: "b" })).text, "Hi");
 });
 
-test("apps: matches what people say to real Start menu names", async () => {
+test("apps: matches what people say, launches by AppID and reports window checks", async () => {
   const list = [
     { Name: "WhatsApp", AppID: "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App" },
     { Name: "Visual Studio Code", AppID: "Microsoft.VisualStudioCode" },
     { Name: "Uninstall Visual Studio Code", AppID: "x" },
     { Name: "Google Chrome", AppID: "Chrome" },
-    { Name: "Spotify", AppID: "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" },
+    { Name: "Perplexity", AppID: "ai.perplexity.desktop" },
   ];
   const launched = [];
+  let nextStatus = { status: "window" };
   const exec = (cmd, args, opts, cb) => {
-    if (cmd === "powershell.exe") { cb(null, JSON.stringify(list)); return {}; }
-    launched.push([cmd, args]); cb(null); return { on() {} };
+    if (args.includes("-Command")) { cb(null, JSON.stringify(list)); return {}; }
+    launched.push({ appId: opts.env.RELAY_APPID, uri: opts.env.RELAY_URI, match: opts.env.RELAY_MATCH });
+    cb(null, JSON.stringify(nextStatus) + "\r\n"); return {};
   };
   const apps = createApps({ platform: "win32", exec });
   assert.equal((await apps.launch("whatsapp")).name, "WhatsApp");
-  assert.deepEqual(launched.pop(), ["explorer.exe", ["shell:AppsFolder\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App"]]);
+  assert.equal(launched.pop().appId, "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App");
   assert.equal((await apps.launch("vs code")).name, "Visual Studio Code");
+  assert.match(launched.pop().match, /Code/);
   assert.equal((await apps.launch("chrome")).name, "Google Chrome");
+  assert.equal((await apps.launch("calculator")).ok, true);
+  assert.equal(launched.pop().uri, "calculator:");
+  nextStatus = { status: "no_window" };
+  const tray = await apps.launch("perplexity");
+  assert.equal(tray.ok, true); assert.match(tray.warning, /system tray/);
+  nextStatus = { status: "not_running" };
+  const dead = await apps.launch("perplexity");
+  assert.equal(dead.ok, false); assert.match(dead.error, /didn't start Perplexity/);
   const miss = await apps.launch("photoshop");
-  assert.equal(miss.ok, false);
+  assert.equal(miss.reason, "not_found");
+});
+
+test("open_app never reports success it didn't see", async () => {
+  const known = { home: os.tmpdir() };
+  for (const k of ["desktop", "downloads", "documents", "pictures", "music", "videos"]) known[k] = os.tmpdir();
+  const mk = (r) => createTools({ paths: createPaths(known, {}), apps: { launch: async () => r } }).tools.open_app;
+  assert.equal((await mk({ ok: true, name: "Perplexity" }).run({ name: "x" })).summary, "Opened Perplexity");
+  assert.equal((await mk({ ok: true, name: "Perplexity", warning: "in the system tray" }).run({ name: "x" })).opened, false);
+  await assert.rejects(mk({ ok: false, reason: "failed", error: "Windows didn't start Perplexity." }).run({ name: "x" }), /didn't start/);
 });
 
 // ---------- Busy-server handling ----------

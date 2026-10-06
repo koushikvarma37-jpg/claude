@@ -328,8 +328,10 @@ function createTools(ctx) {
       },
       async run({ name }) {
         const r = await ctx.apps.launch(name);
-        if (!r.ok) return { summary: `Couldn't find an app called "${name}"`, error: "not_installed", close_matches: r.suggestions || [] };
-        return { summary: `Opened ${r.name}` };
+        if (!r.ok && r.reason === "not_found") return { summary: `Couldn't find an app called "${name}"`, error: "not_installed", close_matches: r.suggestions || [] };
+        if (!r.ok) throw new Error(r.error);
+        if (r.warning) return { summary: r.warning, opened: false, likely_in_system_tray: true };
+        return { summary: `Opened ${r.name}`, window_verified: true };
       },
     },
 

@@ -140,6 +140,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .reply ul, .reply ol { margin: 4px 0 8px; padding-left: 20px; }
 .reply code { font: 12.5px var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 4px; }
 .reply.error { color: var(--err); }
+.reply.undone > :not(.undone-tag) { opacity: .45; text-decoration: line-through; text-decoration-color: var(--faint); }
+.undone-tag { display: inline-block; margin-top: 6px; font: 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 6px; }
 .reply .err-action { margin-top: 8px; }
 
 /* ---------- Composer ---------- */
