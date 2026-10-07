@@ -55,6 +55,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .icon-btn svg { width: 16px; height: 16px; }
 .icon-btn:hover { background: var(--raised); color: var(--text); }
 .icon-btn.close:hover { background: #c42b1c; color: #fff; }
+#maxBtn .i-restore { display: none; }
+.app.maximized #maxBtn .i-max { display: none; }
+.app.maximized #maxBtn .i-restore { display: block; }
+
+/* On a big or maximized window, keep the conversation in a comfortable, centered column */
+.feed > .turn, .composer > .bar, .composer > .hint { width: 100%; max-width: 920px; margin-inline: auto; }
 
 /* ---------- Feed ---------- */
 .feed { overflow-y: auto; padding: 20px 22px 8px; scroll-behavior: smooth; user-select: text; }

@@ -1,6 +1,6 @@
 // Electron main process: creates the window, registers shortcuts,
 // and connects the UI to the agent, tools and settings.
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, safeStorage, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, safeStorage, Tray, Menu, nativeImage, screen } = require("electron");
 const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
 const { createPaths } = require("./src/paths");
@@ -50,16 +50,42 @@ async function getFallbackModels() {
   return fallbackCache;
 }
 
+/** The size and place Relay was last left at, if that spot is still on a connected screen. */
+function savedBounds() {
+  const b = settings.get("windowBounds");
+  if (!b || !b.width || !b.height) return { width: 760, height: 620 };
+  const area = screen.getDisplayMatching(b).workArea;
+  const visible = b.x < area.x + area.width - 80 && b.x + b.width > area.x + 80 && b.y >= area.y - 10 && b.y < area.y + area.height - 80;
+  return visible ? b : { width: Math.min(b.width, area.width), height: Math.min(b.height, area.height) };
+}
+
 function createWindow() {
   win = new BrowserWindow({
-    width: 760, height: 620, minWidth: 520, minHeight: 440,
-    frame: false, show: false, backgroundColor: "#111315",
+    ...savedBounds(), minWidth: 520, minHeight: 440,
+    frame: false, show: false, backgroundColor: "#111315", maximizable: true, resizable: true,
     title: "Relay",
     icon: path.join(__dirname, "renderer", "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
-  win.once("ready-to-show", () => { if (!startHidden) win.show(); });
+  win.once("ready-to-show", () => {
+    if (settings.get("windowMaximized")) win.maximize();
+    if (!startHidden) win.show();
+  });
+  // Remember size, position and maximized state
+  let saveTimer = null;
+  const rememberBounds = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      const maximized = win.isMaximized();
+      settings.update(maximized ? { windowMaximized: true } : { windowMaximized: false, windowBounds: win.getBounds() });
+    }, 400);
+  };
+  win.on("resize", rememberBounds);
+  win.on("move", rememberBounds);
+  win.on("maximize", () => { rememberBounds(); send({ type: "window-state", maximized: true }); });
+  win.on("unmaximize", () => { rememberBounds(); send({ type: "window-state", maximized: false }); });
   // Closing the window keeps Relay running in the tray, so the shortcut always works
   win.on("close", (e) => {
     if (quitting) return;
@@ -204,6 +230,8 @@ ipcMain.handle("settings:models", async () => {
 });
 
 ipcMain.on("window:minimize", () => win && win.minimize());
+ipcMain.on("window:toggle-maximize", () => { if (!win) return; win.isMaximized() ? win.unmaximize() : win.maximize(); });
+ipcMain.handle("window:is-maximized", () => !!(win && win.isMaximized()));
 ipcMain.on("window:hide", () => win && win.hide());
 ipcMain.on("window:close", () => win && win.close()); // hides to the tray (see the "close" handler)
 ipcMain.on("app:quit", () => { quitting = true; app.quit(); });

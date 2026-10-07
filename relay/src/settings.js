@@ -52,7 +52,7 @@ function createSettings({ dir, safeStorage }) {
 
   function update(patch) {
     if (typeof patch.apiKey === "string" && patch.apiKey.trim()) setApiKey(patch.apiKey);
-    for (const k of ["model", "speakReplies", "autoRunVoice", "startWithWindows", "trayHintShown"]) if (k in patch) data[k] = patch[k];
+    for (const k of ["model", "speakReplies", "autoRunVoice", "startWithWindows", "trayHintShown", "windowBounds", "windowMaximized"]) if (k in patch) data[k] = patch[k];
     save();
     return publicView();
   }

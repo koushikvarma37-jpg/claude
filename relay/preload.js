@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("relay", {
   },
   window: {
     minimize: () => ipcRenderer.send("window:minimize"),
+    toggleMaximize: () => ipcRenderer.send("window:toggle-maximize"),
+    isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
     hide: () => ipcRenderer.send("window:hide"),
     close: () => ipcRenderer.send("window:close"),
     quit: () => ipcRenderer.send("app:quit"),

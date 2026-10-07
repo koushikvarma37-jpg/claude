@@ -202,6 +202,7 @@
 
   window.relay.onEvent((ev) => {
     if (ev.type === "focus-input") { input.focus(); return; }
+    if (ev.type === "window-state") { setMaximized(ev.maximized); return; }
     if (ev.type === "start-voice") { if (!listening) toggleMic(); return; }
     if (ev.type === "retry" && transcribing) { setHint(esc(ev.message), true); return; }
     const turn = currentTurn;
@@ -388,6 +389,10 @@
 
   // ---------- Window controls & keys ----------
   $("#minBtn").addEventListener("click", () => window.relay.window.minimize());
+  const maxBtn = $("#maxBtn");
+  const setMaximized = (m) => { app.classList.toggle("maximized", m); maxBtn.title = m ? "Restore down" : "Maximize"; maxBtn.setAttribute("aria-label", maxBtn.title); };
+  maxBtn.addEventListener("click", () => window.relay.window.toggleMaximize());
+  if (window.relay.window.isMaximized) window.relay.window.isMaximized().then(setMaximized);
   $("#closeBtn").addEventListener("click", () => window.relay.window.close());
   $("#newBtn").addEventListener("click", newConversation);
   function newConversation() {
