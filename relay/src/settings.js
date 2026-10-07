@@ -37,6 +37,24 @@ function createSettings({ dir, safeStorage }) {
     save();
   }
 
+  // Gmail app password for sending emails, encrypted the same way as the API key
+  function getEmailPassword() {
+    if (data.emailPassEnc && canEncrypt()) {
+      try { return safeStorage.decryptString(Buffer.from(data.emailPassEnc, "base64")); } catch { return ""; }
+    }
+    return data.emailPass || "";
+  }
+  function setEmailPassword(pass) {
+    const p = String(pass || "").replace(/\s+/g, ""); // Google shows app passwords in groups of four
+    delete data.emailPass; delete data.emailPassEnc;
+    if (p) { if (canEncrypt()) data.emailPassEnc = safeStorage.encryptString(p).toString("base64"); else data.emailPass = p; }
+  }
+  /** The account Relay sends email from, or null if email isn't set up (then emails open in Gmail instead). */
+  function emailAccount() {
+    const user = data.emailAddress, pass = getEmailPassword();
+    return user && pass ? { user, pass } : null;
+  }
+
   /** What the settings screen sees: never the key itself, only whether one is saved. */
   function publicView() {
     const key = getApiKey();
@@ -47,17 +65,21 @@ function createSettings({ dir, safeStorage }) {
       speakReplies: data.speakReplies,
       autoRunVoice: data.autoRunVoice,
       startWithWindows: !!data.startWithWindows,
+      emailAddress: data.emailAddress || "",
+      hasEmailPassword: !!getEmailPassword(),
     };
   }
 
   function update(patch) {
     if (typeof patch.apiKey === "string" && patch.apiKey.trim()) setApiKey(patch.apiKey);
+    if (typeof patch.emailAddress === "string") data.emailAddress = patch.emailAddress.trim();
+    if (typeof patch.emailPassword === "string") setEmailPassword(patch.emailPassword);
     for (const k of ["model", "speakReplies", "autoRunVoice", "startWithWindows", "trayHintShown", "windowBounds", "windowMaximized"]) if (k in patch) data[k] = patch[k];
     save();
     return publicView();
   }
 
-  return { getApiKey, setApiKey, publicView, update, get: (k) => data[k] };
+  return { getApiKey, setApiKey, publicView, update, emailAccount, get: (k) => data[k] };
 }
 
 module.exports = { createSettings };

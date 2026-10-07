@@ -78,8 +78,8 @@
       <div class="chips" id="chips">
         <button>Sort my Downloads folder</button>
         <button>Make a folder called DSP notes on the desktop</button>
-        <button>Open WhatsApp</button>
-        <button>Find my resume</button>
+        <button>What's my battery level?</button>
+        <button>Remind me in 20 minutes to drink water</button>
       </div>
     </section>
   </main>
@@ -130,6 +130,21 @@
         <label class="toggle"><input type="checkbox" id="speakToggle" /><span class="track"><i></i></span><span>Speak short replies when I use my voice</span></label>
         <label class="toggle"><input type="checkbox" id="autoRunToggle" /><span class="track"><i></i></span><span>Run voice commands straight away, without showing the transcript first</span></label>
         <label class="toggle"><input type="checkbox" id="startToggle" /><span class="track"><i></i></span><span>Start Relay when Windows starts (it waits quietly in the tray)</span></label>
+      </section>
+      <section class="group">
+        <div class="lbl">Sending email</div>
+        <p class="help">Without this, Relay writes the email and opens it in Gmail for you to press Send. To let Relay send emails by itself, add your Gmail (or college Google) address and an <b>app password</b>: turn on 2-Step Verification, then create one at <a href="#" data-link="https://myaccount.google.com/apppasswords">myaccount.google.com/apppasswords</a>.</p>
+        <input id="emailInput" type="email" placeholder="you@gmail.com" spellcheck="false" autocomplete="off" />
+        <div class="row">
+          <input id="emailPassInput" type="password" placeholder="16-letter app password" spellcheck="false" autocomplete="off" />
+          <button class="btn" id="emailSave" type="button">Save</button>
+        </div>
+        <p class="help" id="emailHelp"></p>
+      </section>
+      <section class="group">
+        <div class="lbl">What Relay remembers</div>
+        <p class="help">Facts, contacts and reminders you've told Relay. Stored only on this PC. Say "remember…", "save Amma's number…" or "remind me…" to add more.</p>
+        <div class="mem" id="memList"></div>
       </section>
       <section class="group">
         <div class="lbl">Shortcuts</div>

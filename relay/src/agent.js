@@ -6,10 +6,15 @@
 const MAX_STEPS = 10;
 const HISTORY_LIMIT = 40; // contents kept for follow-ups like "open it" or "undo that"
 
-function systemPrompt(paths, now) {
+function localIso(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function systemPrompt(paths, now, memory = "") {
   const k = paths.known;
   return `You are Relay, an AI agent that controls a Windows laptop for its owner, Teja.
-Today is ${now.toDateString()}, ${now.toLocaleTimeString()}.
+Now: ${now.toDateString()}, ${now.toLocaleTimeString()} (local time ${localIso(now)}).
 
 Known folders on this computer:
 - Desktop: ${k.desktop}
@@ -21,23 +26,35 @@ Known folders on this computer:
 - Home: ${k.home}
 
 How to work:
-- Use tools to do things. Never claim you did something unless a tool result says it happened.
+- Use tools to do things. Never claim you did something unless a tool result says it happened. If a result says sent: false or has an error, say exactly that.
 - Paths must start with a known folder (e.g. "Desktop/DSP notes", "Downloads") or be full paths (e.g. "D:\\College").
 - If the user names a file or folder without its location ("my resume", "the College folder"), call find_files first. If there are several good matches, ask which one. If there are none, say so; don't guess.
 - When the user says "a folder called X" with no location, create it on the Desktop.
 - For several steps ("make a folder, move my PDFs into it and open it"), call the tools one after another.
-- Moving, organizing, renaming and deleting ask the user for approval automatically. Don't ask "are you sure?" yourself; just call the tool. If a result says the user declined, stop and say it was cancelled.
+- Moving, organizing, renaming, deleting, sending messages/emails and shutting down ask the user for approval automatically. Don't ask "are you sure?" yourself; just call the tool. If a result says the user declined, stop and say it was cancelled.
 - To open an app use open_app. If it isn't installed, say so and suggest the closest match or the web version (e.g. https://web.whatsapp.com for WhatsApp).
 - For general questions (definitions, explanations, quick facts), answer directly without tools.
 
+Messages and email:
+- "Message/text/WhatsApp Amma that I'll be late" → send_whatsapp with to "Amma" and the message in Teja's voice ("I'll be late"), not "Teja says…". Keep the language they used (Telugu, Hindi or English, or a mix).
+- For emails, write a proper subject and a complete, polite body, signed "Teja". Keep it short unless asked for more.
+- If a tool says it needs a number or an email address, ask Teja for it. Once Teja gives it, save it with save_contact, then send.
+- If the user gives a number or email for someone ("Ravi's number is 98…"), save it with save_contact.
+
+PC, screen, files, memory:
+- Volume, music, brightness, Wi-Fi/Bluetooth, lock/sleep/shutdown/restart, battery and screenshots each have a tool.
+- "What's on my screen", "explain this error", "read this" → look_at_screen.
+- Questions about what's inside a document → find it (find_files or search_in_files), then read_file with the question.
+- "Remember…" → remember. "Remind me…" → set_reminder ("in 20 minutes" → in_minutes; "at 5" → the next 5 o'clock that makes sense, as local time YYYY-MM-DDTHH:MM). "What do you remember / what are my reminders" → answer from the lists below.
+
 How to reply:
-- After actions: one short sentence saying what happened, e.g. "Done. Moved 12 PDFs to Documents\\College."
+- After actions: one short sentence saying what happened, e.g. "Done. Moved 12 PDFs to Documents\\College." or "Sent to Amma on WhatsApp."
 - For questions: clear and concise; use short paragraphs or bullet points. No long essays.
 - Use plain text with simple **bold** or bullet points only. Use friendly folder names like "Desktop\\DSP notes", not full C:\\Users paths.
-- If a command is unclear or the transcript looks garbled, ask a short clarifying question instead of guessing.`;
+- If a command is unclear or the transcript looks garbled, ask a short clarifying question instead of guessing.${memory ? `\n\n${memory}` : ""}`;
 }
 
-function createAgent({ getClient, getModel, getFallbackModels = async () => [], quick = null, toolkit, paths, onEvent, askConfirm, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+function createAgent({ getClient, getModel, getFallbackModels = async () => [], quick = null, toolkit, paths, onEvent, askConfirm, getMemory = () => "", sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let history = [];
   let stopRequested = false;
   let generation = 0; // bumps on reset(), so a command still running from an old conversation can't leak into the new one
@@ -98,7 +115,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     const tool = toolkit.tools[call.name];
     if (!tool) return { error: `Unknown tool ${call.name}` };
     const args = call.args || {};
-    if (tool.confirm) {
+    if (typeof tool.confirm === "function" ? tool.confirm(args) : tool.confirm) {
       const plan = await tool.plan(args);
       if (plan.empty) return { summary: plan.title, nothing_to_do: true };
       onEvent({ type: "step-update", turnId, stepId, state: "waiting", detail: "Waiting for your approval" });
@@ -117,7 +134,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     try { result = await execute({ name: q.tool, args: q.args }, turnId, stepId); } // execute() shows the approval card when needed
     catch (err) { onEvent({ type: "step-update", turnId, stepId, state: "failed", detail: err.message }); return { text: err.message, failed: true }; }
     if (result.error === "not_installed") { onEvent({ type: "step-remove", turnId, stepId }); return null; }
-    onEvent({ type: "step-update", turnId, stepId, state: result.declined ? "cancelled" : "done", detail: result.summary, undoable: !!result.undoable });
+    onEvent({ type: "step-update", turnId, stepId, state: result.declined ? "cancelled" : result.error ? "failed" : "done", detail: result.summary, undoable: !!result.undoable });
     if (result.declined) { trimHistory(); history.push({ role: "user", parts: [{ text }] }, { role: "model", parts: [{ text: "Cancelled." }] }); return { text: "Cancelled. Nothing was changed.", quick: true }; }
     const reply = /[.!?]$/.test(result.summary) ? result.summary : result.summary + ".";
     trimHistory();
@@ -166,7 +183,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
       const { res } = await callModel(ai, {
         contents: history,
         config: {
-          systemInstruction: systemPrompt(paths, new Date()),
+          systemInstruction: systemPrompt(paths, new Date(), getMemory()),
           tools: [{ functionDeclarations: toolkit.declarations }],
           temperature: 0.2,
         },
@@ -189,7 +206,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
         try {
           result = await execute(call, turnId, stepId);
           const state = result.declined ? "cancelled" : result.error ? "failed" : "done";
-          if (state === "done" && result.summary && !/^(Found|Nothing found|.*: \d+ folders)/.test(result.summary)) done.push(result.summary);
+          if (state === "done" && result.summary && !/^(Found|Nothing found|No documents|Read |Looked at|Checked|Battery|.*: \d+ folders)/.test(result.summary)) done.push(result.summary);
           onEvent({ type: "step-update", turnId, stepId, state, detail: result.summary || result.error, undoable: !!result.undoable });
         } catch (err) {
           result = { error: err.message };
@@ -222,9 +239,21 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     return t === "[no speech]" ? "" : t;
   }
 
+  /** A one-off question to Gemini about an image, screenshot or file (used by look_at_screen, read_file and WhatsApp checks). */
+  async function ask(parts, { json = false } = {}) {
+    const { res } = await callModel(getClient(), {
+      contents: [{ role: "user", parts }],
+      config: { temperature: 0.2, ...(json ? { responseMimeType: "application/json" } : {}) },
+    }, { turnId: null, allowSwitch: true });
+    const text = (res.text || "").trim();
+    if (!text) throw new Error("Gemini didn't answer. Try again.");
+    return text;
+  }
+
   return {
     run,
     transcribe,
+    ask,
     stop: () => { stopRequested = true; },
     reset: () => { history = []; generation++; stopRequested = true; },
     /** Gemini's memory of this conversation, saved with the chat so it can be continued later */

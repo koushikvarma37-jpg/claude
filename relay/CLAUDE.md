@@ -9,7 +9,7 @@ Relay must feel so good that the user wants to use it for **every task on their 
 - **It does the job, every time.** A command either completes correctly or says clearly what went wrong and how to fix it. Never claim success a tool didn't report.
 - **It's fast.** Instant feedback on every keypress and click; show progress within ~100 ms; keep round-trips to Gemini to a minimum.
 - **It's comfortable.** Calm, polished UI with smooth motion, clear states (listening, thinking, working, needs approval, done), and no clutter. Keyboard-first, with voice that just works.
-- **It's trustworthy.** Anything that moves, renames or deletes shows exactly what will change, waits for approval, and can be undone. System folders stay blocked. File contents are never uploaded unless asked.
+- **It's trustworthy.** Anything that moves, renames or deletes shows exactly what will change, waits for approval, and can be undone. Messages and emails show the exact text and wait for Send; Relay checks the screen before pressing Send and stops if anything looks wrong. System folders stay blocked. File contents and screenshots are only sent to Gemini when the user asks for them.
 - **It's always there.** One shortcut away from anywhere in Windows.
 
 ## Before shipping any change

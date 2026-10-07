@@ -23,6 +23,26 @@ function createQuick({ apps }) {
 
     if (/^(?:undo|undo (?:that|it|the last (?:change|action))|revert (?:that|it))$/i.test(t)) return { tool: "undo_last", args: {} };
 
+    // PC controls
+    const pls = "(?:please\\s+)?";
+    if ((m = t.match(new RegExp(`^${pls}(?:turn |increase |raise )?(?:the )?volume (up|down)$|^${pls}(increase|decrease|raise|lower|reduce) (?:the )?volume$|^${pls}turn (?:it |the volume )?(up|down)$`, "i")))) {
+      const dir = (m[1] || m[2] || m[3]).toLowerCase();
+      return { tool: "set_volume", args: { change: /up|increase|raise/.test(dir) ? 10 : -10 } };
+    }
+    if ((m = t.match(new RegExp(`^${pls}(?:set |change |put )?(?:the )?volume (?:to |at )?(\\d{1,3})\\s*(?:%|percent)?$`, "i")))) return { tool: "set_volume", args: { level: +m[1] } };
+    if (new RegExp(`^${pls}(?:mute|mute (?:the )?(?:sound|volume|audio|pc|laptop))$`, "i").test(t)) return { tool: "set_volume", args: { mute: "on" } };
+    if (new RegExp(`^${pls}(?:unmute|unmute (?:the )?(?:sound|volume|audio|pc|laptop))$`, "i").test(t)) return { tool: "set_volume", args: { mute: "off" } };
+    if (new RegExp(`^${pls}(?:pause|play|resume)(?: (?:the )?(?:music|song|video|it))?$`, "i").test(t)) return { tool: "media_control", args: { action: "play_pause" } };
+    if (new RegExp(`^${pls}(?:next|skip)(?: (?:the )?(?:song|track|video|this))?$|^${pls}(?:play )?(?:the )?next (?:song|track|video)$`, "i").test(t)) return { tool: "media_control", args: { action: "next" } };
+    if (new RegExp(`^${pls}(?:previous|play (?:the )?previous)(?: song| track| video)?$|^${pls}go back a (?:song|track)$`, "i").test(t)) return { tool: "media_control", args: { action: "previous" } };
+    if ((m = t.match(new RegExp(`^${pls}(?:set |change )?(?:the )?brightness (?:to |at )?(\\d{1,3})\\s*(?:%|percent)?$`, "i")))) return { tool: "set_brightness", args: { level: +m[1] } };
+    if ((m = t.match(new RegExp(`^${pls}(?:turn |increase |decrease )?(?:the )?brightness (up|down)$|^${pls}(increase|decrease|reduce|lower|raise) (?:the )?brightness$`, "i")))) {
+      return { tool: "set_brightness", args: { change: /up|increase|raise/i.test(m[1] || m[2]) ? 20 : -20 } };
+    }
+    if (new RegExp(`^${pls}lock(?: (?:my |the |this )?(?:pc|computer|laptop|screen|system))?$`, "i").test(t)) return { tool: "power_action", args: { action: "lock" } };
+    if (new RegExp(`^${pls}(?:take|grab|capture) (?:a )?screenshot$|^screenshot$`, "i").test(t)) return { tool: "take_screenshot", args: {} };
+    if (/^(?:what(?:'s| is) (?:my |the )?battery(?: level| percentage)?|battery(?: level| status| percentage)?|how much battery(?: is left| do i have)?)\??$/i.test(t)) return { tool: "system_status", args: {} };
+
     // "sort my downloads", "organize the desktop folder", "clean up downloads" (still asks for approval)
     if ((m = t.match(/^(?:please\s+)?(?:sort|organi[sz]e|tidy(?: up)?|clean(?: up)?|arrange)\s+(?:my\s+|the\s+)?(desktop|downloads|documents|pictures|music|videos)(?:\s+folder)?(?:\s+by\s+(?:file\s+)?type)?$/i))) {
       return { tool: "organize_folder", args: { path: m[1] } };

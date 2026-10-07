@@ -1,7 +1,7 @@
 {
   "name": "relay",
   "productName": "Relay",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Relay: an AI desktop agent for Windows. Type or speak a command and Relay does it.",
   "main": "main.js",
   "author": "Teja Varma",
@@ -13,7 +13,8 @@
     "dist": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
-    "@google/genai": "^2.27.0"
+    "@google/genai": "^2.27.0",
+    "nodemailer": "^10.0.15"
   },
   "devDependencies": {
     "electron": "^44.5.1",

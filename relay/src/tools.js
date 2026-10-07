@@ -8,6 +8,10 @@
 //   run()    – does it and returns a result object for Gemini (always with a short `summary`)
 const fs = require("fs/promises");
 const fssync = require("fs");
+const { createSystemTools } = require("./system");
+const { createMemoryTools } = require("./memory");
+const { createReaderTools } = require("./reader");
+const { createMessagingTools } = require("./messaging");
 
 const CATEGORIES = {
   Images: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "svg", "tif", "tiff", "ico", "raw"],
@@ -23,6 +27,7 @@ const SKIP_DIRS = new Set(["node_modules", ".git", "appdata", "$recycle.bin", "_
 
 function createTools(ctx) {
   // ctx: { paths, openPath, openExternal, trash, apps, now }
+  //   + for v2 tools: ps (PowerShell runner), exec, captureScreen, ask (Gemini on images/files), memory, settings, clipboard, sendMail
   const { paths } = ctx;
   const P = paths.path;
   const undoStack = [];
@@ -377,6 +382,12 @@ function createTools(ctx) {
       async run() { return undoLast(); },
     },
   };
+
+  // v2 abilities, each in its own file. Added only when main.js provides what they need (tests can leave them out).
+  if (ctx.ps) Object.assign(tools, createSystemTools(ctx));
+  if (ctx.ask) Object.assign(tools, createReaderTools(ctx));
+  if (ctx.memory) Object.assign(tools, createMemoryTools(ctx));
+  if (ctx.memory && ctx.settings && ctx.ps) Object.assign(tools, createMessagingTools(ctx));
 
   async function planRename(path, newName) {
     const from = paths.assertAllowed(paths.resolve(path));

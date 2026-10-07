@@ -29,8 +29,26 @@
     move_files: "Moving files", organize_folder: "Organizing a folder", rename_item: "Renaming",
     delete_items: "Sending to the Recycle Bin", open_path: "Opening", open_app: "Opening an app",
     open_url: "Opening a website", web_search: "Searching the web", undo_last: "Undoing the last change",
+    set_volume: "Changing the volume", media_control: "Controlling the music", set_brightness: "Changing the brightness",
+    set_radio: "Switching wireless", power_action: "Power", open_settings: "Opening Settings", system_status: "Checking the PC",
+    take_screenshot: "Taking a screenshot", look_at_screen: "Looking at your screen", read_file: "Reading the file",
+    search_in_files: "Searching inside documents", send_whatsapp: "WhatsApp message", send_email: "Email",
+    remember: "Remembering", save_contact: "Saving a contact", forget: "Forgetting", set_reminder: "Setting a reminder",
   };
-  const firstArg = (a) => a.path || a.name || a.query || a.url || a.destination || (a.paths && a.paths.join(", ")) || a.from_folder || "";
+  function firstArg(a, tool) {
+    if (tool === "send_whatsapp" || tool === "send_email") return a.to ? `To ${a.to}` : "";
+    if (tool === "set_volume") return a.level != null ? `${a.level}%` : a.change != null ? `${a.change > 0 ? "+" : ""}${a.change}` : a.mute ? `Mute ${a.mute}` : "";
+    if (tool === "set_brightness") return a.level != null ? `${a.level}%` : a.change != null ? `${a.change > 0 ? "+" : ""}${a.change}` : "";
+    if (tool === "set_radio") return `${/blue/i.test(a.radio || "") ? "Bluetooth" : "Wi-Fi"} ${a.on ? "on" : "off"}`;
+    if (tool === "power_action") return String(a.action || "").replace("_", " ");
+    if (tool === "media_control") return String(a.action || "").replace("_", "/");
+    if (tool === "look_at_screen") return a.question || "";
+    if (tool === "remember") return a.fact || "";
+    if (tool === "set_reminder") return a.message || "";
+    if (tool === "forget") return a.what || "";
+    if (tool === "open_settings") return a.page || "";
+    return a.path || a.name || a.query || a.url || a.destination || (a.paths && a.paths.join(", ")) || a.from_folder || "";
+  }
 
   // ---------- Status ----------
   function setStatus(state, text) {
@@ -107,7 +125,7 @@
     li.className = "step running";
     li.innerHTML = `<span class="st-ic"><span class="spin"></span></span><div><div class="st-title"></div><div class="st-detail"></div></div><span class="st-act"></span>`;
     li.querySelector(".st-title").textContent = TOOL_TITLES[ev.tool] || ev.tool;
-    li.querySelector(".st-detail").textContent = firstArg(ev.args || {});
+    li.querySelector(".st-detail").textContent = firstArg(ev.args || {}, ev.tool);
     turn.el.querySelector(".steps").appendChild(li);
     turn.steps.set(ev.stepId, li);
     const sd = { title: li.querySelector(".st-title").textContent, detail: li.querySelector(".st-detail").textContent, state: "running" };
@@ -146,8 +164,10 @@
     const li = turn.steps.get(ev.stepId);
     const card = document.createElement("div");
     card.className = `confirm${ev.danger ? " danger" : ""}`;
-    card.innerHTML = `<h3></h3><ul></ul><div class="actions"><button class="btn${ev.danger ? " danger" : ""}" type="button" data-ok="1">${ev.danger ? "Move to Recycle Bin" : "Do it"}</button><button class="btn ghost" type="button" data-ok="0">Cancel</button><small>Enter to approve · Esc to cancel</small></div>`;
+    card.innerHTML = `<h3></h3><ul></ul><div class="msg" hidden></div><div class="actions"><button class="btn${ev.danger ? " danger" : ""}" type="button" data-ok="1"></button><button class="btn ghost" type="button" data-ok="0">Cancel</button><small>Enter to approve · Esc to cancel</small></div>`;
     card.querySelector("h3").textContent = ev.title;
+    card.querySelector("[data-ok='1']").textContent = ev.okLabel || (ev.danger ? "Move to Recycle Bin" : "Do it");
+    if (ev.message) { const m = card.querySelector(".msg"); m.hidden = false; m.textContent = ev.message; }
     const ul = card.querySelector("ul");
     for (const line of ev.lines || []) { const l = document.createElement("li"); l.textContent = line; ul.appendChild(l); }
     if (!(ev.lines || []).length) ul.remove();
@@ -218,6 +238,7 @@
     if (ev.type === "window-state") { setMaximized(ev.maximized); return; }
     if (ev.type === "start-voice") { if (!listening) toggleMic(); return; }
     if (ev.type === "retry" && transcribing) { setHint(esc(ev.message), true); return; }
+    if (ev.type === "reminder") { setHint(`<b>Reminder:</b> ${esc(ev.text)}`, true); speak(`Reminder: ${ev.text}`); setTimeout(resetHint, 15000); return; }
     const turn = currentTurn;
     if (!turn || (ev.turnId && ev.turnId !== turn.id)) return;
     if (ev.type === "thinking") { showThinking(turn, true); turn.thinkingEl.lastElementChild.textContent = "Thinking"; setStatus("thinking", "Thinking"); }
@@ -349,7 +370,59 @@
     $("#speakToggle").checked = !!settings.speakReplies;
     $("#autoRunToggle").checked = !!settings.autoRunVoice;
     $("#startToggle").checked = !!settings.startWithWindows;
+    $("#emailInput").value = settings.emailAddress || "";
+    $("#emailPassInput").value = "";
+    $("#emailPassInput").placeholder = settings.hasEmailPassword ? "Saved · paste a new one to replace" : "16-letter app password";
     if (!$("#modelSelect").options.length) fillModels([]);
+    renderMemory();
+  }
+
+  // ---------- Email settings ----------
+  async function saveEmail() {
+    const help = $("#emailHelp");
+    const address = $("#emailInput").value.trim(), pass = $("#emailPassInput").value.replace(/\s+/g, "");
+    if (address && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) { help.className = "help bad"; help.textContent = "That doesn't look like an email address."; return; }
+    if (pass && pass.length !== 16) { help.className = "help bad"; help.textContent = "App passwords are 16 letters long. Copy it again from Google."; return; }
+    const patch = { emailAddress: address };
+    if (pass || !address) patch.emailPassword = address ? pass : "";
+    settings = await window.relay.settings.set(patch);
+    help.className = settings.emailAddress && settings.hasEmailPassword ? "help ok" : "help";
+    help.textContent = !settings.emailAddress ? "Removed. Emails will open in Gmail for you to send."
+      : settings.hasEmailPassword ? `Saved. Relay will send emails from ${settings.emailAddress}.` : "Add the app password too, so Relay can send by itself.";
+    refreshSettingsUI();
+  }
+  $("#emailSave").addEventListener("click", saveEmail);
+  $("#emailPassInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveEmail(); });
+
+  // ---------- What Relay remembers ----------
+  async function renderMemory() {
+    const box = $("#memList");
+    if (!window.relay.memory) { box.closest(".group").hidden = true; return; }
+    const r = await window.relay.memory.list();
+    const m = r.ok ? r.memory : { facts: [], contacts: [], reminders: [] };
+    box.innerHTML = "";
+    const when = (ms) => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    const groups = [
+      ["Contacts", m.contacts.map((c) => ({ id: c.id, main: c.name, sub: [c.phone ? `+${c.phone}` : "", c.email || ""].filter(Boolean).join(" · ") }))],
+      ["Reminders", m.reminders.map((x) => ({ id: x.id, main: x.text, sub: when(x.at) + (x.repeat ? ` · ${x.repeat}` : "") }))],
+      ["Facts", m.facts.slice().reverse().map((f) => ({ id: f.id, main: f.text, sub: "" }))],
+    ];
+    let any = false;
+    for (const [label, items] of groups) {
+      if (!items.length) continue;
+      any = true;
+      const h = document.createElement("div"); h.className = "mem-h"; h.textContent = label; box.appendChild(h);
+      for (const it of items) {
+        const row = document.createElement("div"); row.className = "mem-row";
+        row.innerHTML = '<div><div class="mem-main"></div><div class="mem-sub"></div></div><button class="icon-btn" type="button" aria-label="Forget" title="Forget"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+        row.querySelector(".mem-main").textContent = it.main;
+        row.querySelector(".mem-sub").textContent = it.sub;
+        if (!it.sub) row.querySelector(".mem-sub").remove();
+        row.querySelector("button").addEventListener("click", async () => { await window.relay.memory.remove(it.id); renderMemory(); });
+        box.appendChild(row);
+      }
+    }
+    if (!any) box.innerHTML = '<p class="help">Nothing yet.</p>';
   }
 
   async function saveKey(value, helpEl) {

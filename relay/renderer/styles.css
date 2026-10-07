@@ -177,6 +177,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .confirm h3 { margin: 0 0 8px; font: 600 14px var(--ui); }
 .confirm ul { list-style: none; margin: 0 0 12px; padding: 0; font: 12px/1.7 var(--mono); color: var(--muted); max-height: 170px; overflow-y: auto; }
 .confirm ul li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.confirm .msg { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; user-select: text; }
 .confirm .actions { display: flex; gap: 8px; align-items: center; }
 .confirm .actions small { margin-left: auto; color: var(--faint); font-size: 11.5px; }
 .btn { font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 7px; border: 1px solid transparent; background: var(--copper); color: #1a0f07; cursor: pointer; transition: filter .15s, background .15s; }
@@ -235,8 +236,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .group:last-child { border-bottom: 0; }
 .lbl { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
 .row { display: flex; gap: 8px; }
-.row input, .row select { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: 13px var(--mono); outline: none; }
-.row input:focus, .row select:focus { border-color: var(--copper); }
+#emailInput { width: 100%; }
+#emailInput, .row input, .row select { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: 13px var(--mono); outline: none; }
+#emailInput:focus, .row input:focus, .row select:focus { border-color: var(--copper); }
 .help { margin: 0; font-size: 12px; color: var(--muted); user-select: text; }
 .help.ok { color: var(--live); } .help.bad { color: var(--err); }
 .toggle { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; cursor: pointer; font-size: 13px; }
@@ -247,6 +249,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .toggle input:checked + .track i { transform: translateX(16px); background: #1a0f07; }
 .toggle input:focus-visible + .track { outline: 2px solid var(--copper); outline-offset: 2px; }
 .toggle > span:last-child { grid-column: 2; }
+.mem { display: grid; gap: 2px; max-height: 280px; overflow-y: auto; }
+.mem-h { font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; margin: 8px 0 2px; }
+.mem-h:first-child { margin-top: 0; }
+.mem-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 6px 4px 6px 10px; border-radius: 7px; background: var(--bg); }
+.mem-main { font-size: 13px; user-select: text; overflow-wrap: anywhere; }
+.mem-sub { font: 11.5px var(--mono); color: var(--muted); user-select: text; }
+.mem-row .icon-btn { width: 26px; height: 26px; opacity: .55; }
+.mem-row:hover .icon-btn, .mem-row .icon-btn:focus-visible { opacity: 1; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0; font-size: 12.5px; }
 .keys dt { white-space: nowrap; } .keys dd { margin: 0; color: var(--muted); }
 
