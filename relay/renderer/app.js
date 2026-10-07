@@ -5,6 +5,7 @@
   const statusEl = $("#status"), statusText = $("#statusText");
   const recorder = new window.RelayRecorder($("#wave"));
   const HINT = hint.innerHTML;
+  const EMPTY_TEMPLATE = document.getElementById("empty").cloneNode(true); // fresh start screen for new conversations
 
   let busy = false, listening = false, transcribing = false;
   let pendingSpoken = false;          // the text in the box came from the mic
@@ -187,6 +188,7 @@
     setStatus("thinking", "Thinking");
     showThinking(turn, true);
     const res = await window.relay.run(text, turn.id);
+    if (currentTurn !== turn) { setBusy(false); return; } // a new conversation was started meanwhile
     if (res.ok) {
       addReply(turn, res.text);
       if (spoken) speak(res.text);
@@ -225,7 +227,8 @@
     // While Relay is working, Enter approves a pending step instead of stopping everything
     if (e.key === "Enter" && busy) { e.preventDefault(); if (activeConfirm) answerConfirm(true); }
   });
-  $("#chips").addEventListener("click", (e) => { if (e.target.tagName === "BUTTON") run(e.target.textContent, false); });
+  // Suggestion chips (delegated, so it keeps working after a new conversation rebuilds the start screen)
+  feed.addEventListener("click", (e) => { const b = e.target.closest("#chips button"); if (b) run(b.textContent, false); });
 
   // ---------- Voice ----------
   function setHint(html, live) { hint.innerHTML = html; hint.classList.toggle("live", !!live); }
@@ -396,9 +399,19 @@
   $("#closeBtn").addEventListener("click", () => window.relay.window.close());
   $("#newBtn").addEventListener("click", newConversation);
   function newConversation() {
-    if (busy) return;
+    if (listening) cancelListening();
+    if (activeConfirm) answerConfirm(false);
+    if (busy) window.relay.stop();          // stop the running command; its late events are ignored below
     window.relay.reset();
-    location.reload();
+    speechSynthesis.cancel();
+    currentTurn = null;
+    feed.innerHTML = "";
+    feed.appendChild(EMPTY_TEMPLATE.cloneNode(true));
+    renderEmpty();
+    input.value = ""; input.classList.remove("heard"); pendingSpoken = false;
+    resetHint();
+    if (!busy) setStatus("ready", "Ready");
+    input.focus();
   }
 
   document.addEventListener("keydown", (e) => {

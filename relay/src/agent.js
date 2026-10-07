@@ -40,6 +40,7 @@ How to reply:
 function createAgent({ getClient, getModel, getFallbackModels = async () => [], quick = null, toolkit, paths, onEvent, askConfirm, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let history = [];
   let stopRequested = false;
+  let generation = 0; // bumps on reset(), so a command still running from an old conversation can't leak into the new one
   let preferredFallback = null; // a model that worked when the main one was busy; reused for a while
   let fallbackUntil = 0;
 
@@ -124,7 +125,14 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     return { text: reply, quick: true };
   }
 
-  async function run(text, { turnId }) {
+  async function run(text, opts) {
+    const gen = generation;
+    const out = await runInner(text, opts);
+    if (gen !== generation) { history = []; return { text: "Stopped.", abandoned: true }; }
+    return out;
+  }
+
+  async function runInner(text, { turnId }) {
     stopRequested = false;
     if (quick) {
       const q = await quick.match(text).catch(() => null);
@@ -218,7 +226,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     run,
     transcribe,
     stop: () => { stopRequested = true; },
-    reset: () => { history = []; },
+    reset: () => { history = []; generation++; stopRequested = true; },
   };
 }
 

@@ -371,3 +371,22 @@ test("free-tier limit messages say what to do", () => {
   assert.match(friendlyError(Object.assign(new Error('RESOURCE_EXHAUSTED "retryDelay": "37s"'), { status: 429 })), /Try again in 37 seconds/);
   assert.match(friendlyError(Object.assign(new Error("RESOURCE_EXHAUSTED"), { status: 429 })), /Try again in a minute/);
 });
+
+test("new conversation while a command runs: nothing leaks into the new chat", async () => {
+  const sb = sandbox();
+  let release;
+  const seen = [];
+  const client = { models: { generateContent: async (req) => {
+    seen.push(req.contents.map((c) => c.role).join(","));
+    if (seen.length === 1) await new Promise((r) => (release = r));
+    return { candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }], functionCalls: [], text: "ok" };
+  } } };
+  const agent = createAgent({ getClient: () => client, getModel: () => "m", toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true });
+  const first = agent.run("long question", { turnId: "a" });
+  await new Promise((r) => setTimeout(r, 10));
+  agent.reset();               // user clicked +
+  release();
+  assert.equal((await first).abandoned, true);
+  await agent.run("hello", { turnId: "b" });
+  assert.equal(seen[1], "user", "the new chat starts with only the new message");
+});
