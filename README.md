@@ -9,7 +9,7 @@ The site is a single `index.html` with no build step. It loads fonts from Google
 - Designed as an electronics datasheet for part **TV-26**, with numbered datasheet sections
 - **Paper / Scope modes**: a printed spec sheet or a dark oscilloscope screen, switched with a circular wipe
 - Live oscilloscope hero: a square wave built from Fourier harmonics (hover to control the harmonics)
-- **Relay demo**: a real screen recording (private details blurred) with clickable chapters, served as MP4 with a WebM fallback from `media/`
+- **Relay demo**: a real screen recording (private details blurred) with clickable chapters, served as MP4 with a WebM fallback
 - Skills as a 14-pin IC pinout (pin 7 GND, pin 14 VCC, like 74-series logic)
 - Scroll-driven transitions with GSAP; everything stays visible if scripts fail to load
 - Responsive; with reduced motion on, animations slow down and become fades instead of switching off
@@ -31,9 +31,9 @@ Everything lives in `index.html`:
 
 | What to change | Where to look |
 | --- | --- |
-| Relay demo video | `media/relay-demo.mp4` (+ `.webm`, poster `.jpg`); chapter times in `#chapters` |
+| Relay demo video | `relay-demo.mp4` (+ `.webm`, poster `.jpg`), next to `index.html`; chapter times in `#chapters` |
 | Skills (chip pins) | `const pins = [...]` in the script |
 | New hackathons and achievements | Add a `.run` block in `<section id="log">` |
 | Colours | CSS variables in `:root` (paper) and `[data-theme="dark"]` (scope) |
 
-When deploying, upload `index.html` **and** the `media/` folder.
+When deploying, upload `index.html` together with the three `relay-demo.*` files (same folder).
