@@ -42,7 +42,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-1.3.3.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-1.4.0.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 
@@ -54,6 +54,9 @@ On first launch, paste a free Gemini key from **https://aistudio.google.com/apik
 - Closing the window keeps Relay running in the **system tray** (the ^ arrow near the clock). Right-click the tray icon for **Start listening**, **Start with Windows** and **Quit Relay**.
 - Relay **starts with Windows** by default and waits quietly in the tray. Turn this off in Settings or the tray menu.
 - **Instant commands** run immediately without asking Gemini (and work offline or when the free limit is used up): `open whatsapp`, `open downloads`, `open youtube`, `search youtube for …`, `google …`, `sort my downloads`, `make a folder called …`, `undo`.
+
+### Past conversations
+Every chat is saved **only on this PC** and listed in the sidebar (**Ctrl+B** to show or hide), grouped by Today, Yesterday and so on. Click a chat to see it again and **carry on**, since Relay restores what it remembered. Search past commands, hover a chat and click the bin twice to delete it, or delete everything in Settings.
 
 ### Run from source (for development)
 ```
@@ -86,7 +89,8 @@ relay/
 ├── preload.js         The safe bridge the UI uses to talk to main.js
 ├── src/
 │   ├── agent.js       Gemini loop: tool calling, approvals, retries, voice transcription
-│   ├── quick.js       Instant commands that skip Gemini (open app/site/folder, search, undo)
+│   ├── quick.js       Instant commands that skip Gemini (open app/site/folder, search, sort, new folder, undo)
+│   ├── history.js     Saves past conversations on this PC
 │   ├── tools.js       File, app and web tools (with plan + undo)
 │   ├── apps.js        Finds installed apps via Windows' Start menu list
 │   ├── paths.js       Turns "Desktop/DSP notes" into real paths, blocks system folders

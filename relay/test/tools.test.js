@@ -390,3 +390,41 @@ test("new conversation while a command runs: nothing leaks into the new chat", a
   await agent.run("hello", { turnId: "b" });
   assert.equal(seen[1], "user", "the new chat starts with only the new message");
 });
+
+// ---------- Past conversations ----------
+const { createHistory } = require("../src/history");
+test("history: save, list newest first, reopen, delete, clear", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-hist-"));
+  let t = 1000;
+  const h = createHistory({ dir, now: () => (t += 1000) });
+  const a = h.save({ turns: [{ text: "sort my downloads folder", steps: [], reply: "Done." }], contents: [{ role: "user", parts: [{ text: "x" }] }] });
+  const b = h.save({ turns: [{ text: "open whatsapp", steps: [], reply: "Opened WhatsApp." }] });
+  assert.equal(a.title, "Sort my downloads folder");
+  assert.deepEqual(h.list().map((m) => m.id), [b.id, a.id]);
+  const again = h.save({ id: a.id, turns: [{ text: "sort my downloads folder" }, { text: "undo" }] });
+  assert.equal(again.id, a.id);
+  assert.equal(h.list()[0].id, a.id, "updated chat moves to the top");
+  assert.equal(h.load(a.id).turns.length, 2);
+  assert.ok(h.list()[0].search.includes("undo"));
+  h.remove(b.id);
+  assert.deepEqual(h.list().map((m) => m.id), [a.id]);
+  h.clear();
+  assert.deepEqual(h.list(), []);
+});
+
+test("history: ids can't escape the history folder", () => {
+  const h = createHistory({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "relay-hist-")) });
+  assert.throws(() => h.load("../../settings"), /Invalid/);
+  assert.throws(() => h.load("..\\..\\x"), /Invalid/);
+});
+
+test("agent: reopening a chat restores its memory", async () => {
+  const sb = sandbox();
+  let seen = null;
+  const client = { models: { generateContent: async (req) => { seen = req.contents.map((c) => c.parts[0].text); return { candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }], functionCalls: [], text: "ok" }; } } };
+  const agent = createAgent({ getClient: () => client, getModel: () => "m", toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true });
+  agent.load([{ role: "user", parts: [{ text: "earlier question" }] }, { role: "model", parts: [{ text: "earlier answer" }] }]);
+  await agent.run("follow up", { turnId: "t" });
+  assert.deepEqual(seen, ["earlier question", "earlier answer", "follow up"]);
+  assert.equal(agent.getHistory().length, 4);
+});

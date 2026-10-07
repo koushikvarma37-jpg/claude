@@ -13,6 +13,7 @@
   let activeConfirm = null;           // { id, el, resolve }
   let settings = { hasKey: false, speakReplies: true, autoRunVoice: false, model: "gemini-flash-latest" };
   let turnCounter = 0;
+  let convo = { id: null, turns: [] }; // the conversation on screen, as plain data that can be saved and restored
 
   const ICON = {
     type: '<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
@@ -83,7 +84,9 @@
     el.innerHTML = `<div class="cmd"><span class="cmd-ic">${spoken ? ICON.mic : ICON.type}</span><span class="cmd-text"></span></div><ol class="steps"></ol>`;
     el.querySelector(".cmd-text").textContent = text;
     feed.appendChild(el);
-    currentTurn = { el, steps: new Map(), thinkingEl: null, id: `t${++turnCounter}` };
+    const data = { text, spoken: !!spoken, at: Date.now(), steps: [], reply: null, error: false };
+    convo.turns.push(data);
+    currentTurn = { el, steps: new Map(), stepData: new Map(), data, thinkingEl: null, id: `t${++turnCounter}` };
     scrollDown();
     return currentTurn;
   }
@@ -107,6 +110,8 @@
     li.querySelector(".st-detail").textContent = firstArg(ev.args || {});
     turn.el.querySelector(".steps").appendChild(li);
     turn.steps.set(ev.stepId, li);
+    const sd = { title: li.querySelector(".st-title").textContent, detail: li.querySelector(".st-detail").textContent, state: "running" };
+    turn.data.steps.push(sd); turn.stepData.set(ev.stepId, sd);
     scrollDown();
   }
 
@@ -116,6 +121,8 @@
     li.className = `step ${ev.state}`;
     li.querySelector(".st-ic").innerHTML = ev.state === "running" ? '<span class="spin"></span>' : ICON[ev.state] || "";
     if (ev.detail) li.querySelector(".st-detail").textContent = ev.detail;
+    const sd = turn.stepData.get(ev.stepId);
+    if (sd) { sd.state = ev.state; if (ev.detail) sd.detail = ev.detail; }
     if (ev.state === "waiting") setStatus("waiting", "Needs your OK");
     if (ev.state === "running") setStatus("working", "Working");
     if (ev.state === "done" && ev.undoable) {
@@ -128,6 +135,7 @@
         const reply = r.ok && li.closest(".turn").querySelector(".reply");
         if (reply && !reply.classList.contains("undone")) { reply.classList.add("undone"); reply.insertAdjacentHTML("beforeend", '<span class="undone-tag">Undone</span>'); }
         li.querySelector(".st-detail").textContent = r.ok ? r.summary : r.error;
+        if (r.ok) { turn.data.undone = true; if (sd) sd.detail = r.summary; persist(); }
       });
     }
     scrollDown();
@@ -162,6 +170,7 @@
 
   function addReply(turn, text, { error = false, needsKey = false } = {}) {
     showThinking(turn, false);
+    if (turn.data) { turn.data.reply = text || ""; turn.data.error = !!error; }
     const div = document.createElement("div");
     div.className = `reply${error ? " error" : ""}`;
     div.innerHTML = markdown(text || "");
@@ -192,8 +201,10 @@
     if (res.ok) {
       addReply(turn, res.text);
       if (spoken) speak(res.text);
+      persist();
     } else {
       addReply(turn, res.error, { error: true, needsKey: res.needsKey });
+      persist();
       setBusy(false);
       setStatus("error", "Error");
       setTimeout(() => !busy && setStatus("ready", "Ready"), 4000);
@@ -213,7 +224,10 @@
     if (ev.type === "retry") { showThinking(turn, true); turn.thinkingEl.lastElementChild.textContent = ev.message; setStatus("thinking", "Retrying"); }
     if (ev.type === "step") { addStep(turn, ev); setStatus("working", "Working"); }
     if (ev.type === "step-update") updateStep(turn, ev);
-    if (ev.type === "step-remove") { const li = turn.steps.get(ev.stepId); if (li) li.remove(); turn.steps.delete(ev.stepId); }
+    if (ev.type === "step-remove") {
+      const li = turn.steps.get(ev.stepId); if (li) li.remove(); turn.steps.delete(ev.stepId);
+      const sd = turn.stepData.get(ev.stepId); if (sd) turn.data.steps.splice(turn.data.steps.indexOf(sd), 1);
+    }
     if (ev.type === "confirm") showConfirm(turn, ev);
   });
 
@@ -405,9 +419,12 @@
     window.relay.reset();
     speechSynthesis.cancel();
     currentTurn = null;
+    convo = { id: null, turns: [] };
     feed.innerHTML = "";
     feed.appendChild(EMPTY_TEMPLATE.cloneNode(true));
     renderEmpty();
+    markActive();
+    if (isNarrow()) setSidebar(false);
     input.value = ""; input.classList.remove("heard"); pendingSpoken = false;
     resetHint();
     if (!busy) setStatus("ready", "Ready");
@@ -418,6 +435,7 @@
     if (e.key === "Escape") {
       e.preventDefault();
       if (!sheet.hidden) return closeSettings();
+      if (isNarrow() && !app.classList.contains("side-closed")) return setSidebar(false);
       if (activeConfirm) return answerConfirm(false);
       if (listening) return cancelListening();
       if (busy) return window.relay.stop();
@@ -426,7 +444,182 @@
     if (e.key === "Enter" && activeConfirm && document.activeElement !== input) { e.preventDefault(); return answerConfirm(true); }
     if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "m") { e.preventDefault(); return toggleMic(); }
     if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "n") { e.preventDefault(); return newConversation(); }
+    if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "b") { e.preventDefault(); return setSidebar(app.classList.contains("side-closed")); }
   });
+
+
+  // ---------- Past conversations ----------
+  const sideList = $("#sideList"), sideSearch = $("#sideSearch"), sideScrim = $("#sideScrim");
+  let historyItems = [];
+  let saving = Promise.resolve();
+
+  /** Save the conversation on screen (after each finished command). Saves run one at a time, in order. */
+  function persist() {
+    if (!convo.turns.length || !window.relay.history) return;
+    const snapshot = convo, turns = convo.turns.map((t) => ({ ...t, steps: t.steps.map((x) => ({ ...x })) }));
+    saving = saving.then(async () => {
+      const r = await window.relay.history.save(snapshot.id, turns);
+      if (r.ok) { snapshot.id = r.meta.id; await refreshSidebar(); }
+    }).catch(() => {});
+  }
+
+  const isNarrow = () => window.innerWidth <= 760;
+  function setSidebar(open) {
+    app.classList.toggle("side-closed", !open);
+    $("#sideBtn").setAttribute("aria-expanded", String(open));
+    sideScrim.hidden = !(open && isNarrow());
+    if (!isNarrow()) { try { localStorage.setItem("relay.sidebar", open ? "1" : "0"); } catch {} }
+    if (open && !isNarrow()) return;
+    if (!open) input.focus();
+  }
+
+  function dayLabel(ts) {
+    const d = new Date(ts), today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.floor((today - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    if (diff <= 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    if (diff < 7) return "Previous 7 days";
+    if (diff < 30) return "Previous 30 days";
+    return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }
+  function timeLabel(ts) {
+    const d = new Date(ts), diff = Date.now() - ts;
+    if (diff < 60000) return "now";
+    if (dayLabel(ts) === "Today") return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (diff < 7 * 86400000) return d.toLocaleDateString(undefined, { weekday: "short" });
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+
+  function renderSidebar() {
+    const q = sideSearch.value.trim().toLowerCase();
+    const items = q ? historyItems.filter((m) => (m.title || "").toLowerCase().includes(q) || (m.search || "").includes(q)) : historyItems;
+    sideList.innerHTML = "";
+    if (!items.length) {
+      const p = document.createElement("p");
+      p.className = "side-empty";
+      p.textContent = q ? `No chats match "${sideSearch.value.trim()}".` : "Your conversations will appear here.";
+      sideList.appendChild(p);
+      return;
+    }
+    let group = null;
+    for (const m of items) {
+      const g = dayLabel(m.updatedAt);
+      if (g !== group) { group = g; const h = document.createElement("div"); h.className = "side-group"; h.textContent = g; sideList.appendChild(h); }
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "side-item"; b.dataset.id = m.id; b.title = m.title;
+      b.innerHTML = `<span class="si-title"></span><span class="si-time"></span><span class="si-del" role="button" aria-label="Delete chat" title="Delete chat"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M6.5 7l1 12h9l1-12M9.5 7V4.5h5V7"/></svg></span>`;
+      b.querySelector(".si-title").textContent = m.title;
+      b.querySelector(".si-time").textContent = timeLabel(m.updatedAt);
+      sideList.appendChild(b);
+    }
+    markActive();
+  }
+
+  async function refreshSidebar() {
+    const r = await window.relay.history.list();
+    historyItems = r.ok ? r.items : [];
+    renderSidebar();
+  }
+
+  function markActive() {
+    sideList.querySelectorAll(".side-item").forEach((el) => el.classList.toggle("active", el.dataset.id === convo.id));
+  }
+
+  /** Draw a saved turn (read-only: its steps already happened) */
+  function renderSavedTurn(t) {
+    const el = document.createElement("article");
+    el.className = "turn";
+    el.innerHTML = `<div class="cmd"><span class="cmd-ic">${t.spoken ? ICON.mic : ICON.type}</span><span class="cmd-text"></span></div><ol class="steps"></ol>`;
+    el.querySelector(".cmd-text").textContent = t.text;
+    const ol = el.querySelector(".steps");
+    for (const st of t.steps || []) {
+      const state = st.state === "running" || st.state === "waiting" ? "cancelled" : st.state; // interrupted steps
+      const li = document.createElement("li");
+      li.className = `step ${state}`;
+      li.innerHTML = `<span class="st-ic">${ICON[state] || ""}</span><div><div class="st-title"></div><div class="st-detail"></div></div><span class="st-act"></span>`;
+      li.querySelector(".st-title").textContent = st.title;
+      li.querySelector(".st-detail").textContent = st.detail || "";
+      ol.appendChild(li);
+    }
+    if (t.reply != null) {
+      const div = document.createElement("div");
+      div.className = `reply${t.error ? " error" : ""}${t.undone ? " undone" : ""}`;
+      div.innerHTML = markdown(t.reply) + (t.undone ? '<span class="undone-tag">Undone</span>' : "");
+      el.appendChild(div);
+    }
+    feed.appendChild(el);
+  }
+
+  async function openConversation(id) {
+    if (id === convo.id) { if (isNarrow()) setSidebar(false); return; }
+    if (listening) cancelListening();
+    if (activeConfirm) answerConfirm(false);
+    if (busy) window.relay.stop();
+    const r = await window.relay.history.open(id);
+    if (!r.ok) { setHint(`Couldn't open that chat: ${esc(r.error)}`, true); await refreshSidebar(); return; }
+    speechSynthesis.cancel();
+    currentTurn = null;
+    convo = { id: r.conversation.id, turns: r.conversation.turns };
+    feed.innerHTML = "";
+    convo.turns.forEach(renderSavedTurn);
+    const note = document.createElement("p");
+    note.className = "saved-note";
+    note.textContent = "Earlier conversation. Relay remembers it, so you can carry on below.";
+    feed.appendChild(note);
+    feed.scrollTop = feed.scrollHeight;
+    markActive();
+    resetHint();
+    if (!busy) setStatus("ready", "Ready");
+    if (isNarrow()) setSidebar(false);
+    input.focus();
+  }
+
+  async function deleteConversation(id) {
+    await window.relay.history.remove(id);
+    if (id === convo.id) newConversation();
+    await refreshSidebar();
+  }
+
+  function initSidebar() {
+    if (!window.relay.history) { app.classList.add("side-closed"); $("#sideBtn").hidden = true; return; }
+    let open = true;
+    try { open = localStorage.getItem("relay.sidebar") !== "0"; } catch {}
+    setSidebar(open && !isNarrow());
+    $("#sideBtn").addEventListener("click", () => setSidebar(app.classList.contains("side-closed")));
+    $("#sideNew").addEventListener("click", newConversation);
+    sideScrim.addEventListener("click", () => setSidebar(false));
+    sideSearch.addEventListener("input", renderSidebar);
+    sideSearch.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); if (sideSearch.value) { sideSearch.value = ""; renderSidebar(); } else input.focus(); }
+      if (e.key === "Enter") { const first = sideList.querySelector(".side-item"); if (first) openConversation(first.dataset.id); }
+    });
+    sideList.addEventListener("click", (e) => {
+      const item = e.target.closest(".side-item");
+      if (!item) return;
+      const del = e.target.closest(".si-del");
+      if (del) {
+        e.stopPropagation();
+        if (del.classList.contains("armed")) return deleteConversation(item.dataset.id);
+        del.classList.add("armed"); del.textContent = "Delete?";         // second click confirms
+        setTimeout(() => { if (del.isConnected) renderSidebar(); }, 3000);
+        return;
+      }
+      openConversation(item.dataset.id);
+    });
+    window.addEventListener("resize", () => { sideScrim.hidden = !(isNarrow() && !app.classList.contains("side-closed")); });
+
+    const clearBtn = $("#clearHistoryBtn");
+    let armed = false;
+    clearBtn.addEventListener("click", async () => {
+      if (!armed) { armed = true; clearBtn.textContent = "Click again to delete every conversation"; clearBtn.classList.add("danger"); setTimeout(() => { armed = false; clearBtn.textContent = "Delete all conversations"; clearBtn.classList.remove("danger"); }, 4000); return; }
+      armed = false;
+      await window.relay.history.clear();
+      clearBtn.textContent = "All conversations deleted"; clearBtn.classList.remove("danger");
+      newConversation(); closeSettings();
+      await refreshSidebar();
+    });
+    refreshSidebar();
+  }
 
   // ---------- Start ----------
   window.relay.settings.get().then((s) => {
@@ -435,4 +628,5 @@
     renderEmpty();
     input.focus();
   });
+  initSidebar();
 })();

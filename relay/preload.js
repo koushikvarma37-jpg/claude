@@ -23,4 +23,11 @@ contextBridge.exposeInMainWorld("relay", {
     quit: () => ipcRenderer.send("app:quit"),
   },
   openLink: (url) => ipcRenderer.send("open:link", url),
+  history: {
+    list: () => ipcRenderer.invoke("history:list"),
+    save: (id, turns) => ipcRenderer.invoke("history:save", { id, turns }),
+    open: (id) => ipcRenderer.invoke("history:open", id),
+    remove: (id) => ipcRenderer.invoke("history:delete", id),
+    clear: () => ipcRenderer.invoke("history:clear"),
+  },
 });

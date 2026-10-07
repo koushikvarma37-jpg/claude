@@ -10,6 +10,9 @@
 <div class="app" id="app">
   <header class="titlebar">
     <div class="brand">
+      <button class="icon-btn side-toggle" id="sideBtn" title="Chat history (Ctrl+B)" aria-label="Show or hide chat history" aria-controls="sidebar" aria-expanded="true">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M9.5 5v14"/></svg>
+      </button>
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
         <rect x="2" y="13" width="9" height="8" rx="1.5" class="coil" />
         <path d="M2.8 15.5l7.4 3" class="coil-line" />
@@ -38,6 +41,25 @@
     </div>
   </header>
 
+  <div class="body">
+  <aside class="sidebar" id="sidebar" aria-label="Chat history">
+    <div class="side-top">
+      <button class="side-new" id="sideNew" type="button">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New chat</span><kbd>Ctrl+N</kbd>
+      </button>
+      <label class="side-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+        <input id="sideSearch" type="search" placeholder="Search chats" aria-label="Search chats" autocomplete="off" />
+      </label>
+    </div>
+    <nav class="side-list" id="sideList"></nav>
+    <div class="side-foot">
+      <svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
+      Saved only on this PC
+    </div>
+  </aside>
+  <div class="side-scrim" id="sideScrim" hidden></div>
+  <div class="main">
   <main class="feed" id="feed" aria-live="polite">
     <section class="empty" id="empty">
       <div class="contact" aria-hidden="true">
@@ -78,6 +100,8 @@
     </form>
     <div class="hint" id="hint"><kbd>Enter</kbd> run · <kbd>Ctrl</kbd>+<kbd>M</kbd> talk · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> show or hide</div>
   </footer>
+  </div>
+  </div>
 
   <div class="scrim" id="scrim" hidden></div>
   <aside class="sheet" id="sheet" aria-label="Settings" hidden>
@@ -113,8 +137,15 @@
           <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></dt><dd>Show or hide Relay from anywhere</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></dt><dd>Open Relay and start listening</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>M</kbd></dt><dd>Start or stop the mic</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>N</kbd></dt><dd>New chat</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>B</kbd></dt><dd>Show or hide chat history</dd>
           <dt><kbd>Esc</kbd></dt><dd>Cancel, or hide the window</dd>
         </dl>
+      </section>
+      <section class="group">
+        <div class="lbl">Chat history</div>
+        <p class="help">Your conversations are saved only on this PC, never uploaded.</p>
+        <div><button class="btn ghost" id="clearHistoryBtn" type="button">Delete all conversations</button></div>
       </section>
       <section class="group">
         <div class="lbl">Relay keeps running in the system tray when you close the window, so the shortcuts always work.</div>

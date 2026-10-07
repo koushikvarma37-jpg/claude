@@ -9,13 +9,14 @@ const { createApps } = require("./src/apps");
 const { createAgent, friendlyError } = require("./src/agent");
 const { createSettings } = require("./src/settings");
 const { createQuick } = require("./src/quick");
+const { createHistory } = require("./src/history");
 
 const SHOW_SHORTCUT = "Control+Shift+Space";
 const VOICE_SHORTCUT = "Control+Shift+M";
 
 let win = null, tray = null;
 let quitting = false;
-let settings, agent, toolkit;
+let settings, agent, toolkit, history;
 const startHidden = process.argv.includes("--hidden"); // launched by Windows at sign-in
 let client = null, clientKey = "";
 const pendingConfirms = new Map();
@@ -141,6 +142,7 @@ function showWindow() {
 
 app.whenReady().then(() => {
   settings = createSettings({ dir: app.getPath("userData"), safeStorage });
+  history = createHistory({ dir: path.join(app.getPath("userData"), "conversations") });
   const paths = createPaths({
     home: app.getPath("home"), desktop: app.getPath("desktop"), downloads: app.getPath("downloads"),
     documents: app.getPath("documents"), pictures: app.getPath("pictures"), music: app.getPath("music"), videos: app.getPath("videos"),
@@ -206,6 +208,14 @@ ipcMain.handle("relay:undo", async () => {
 });
 ipcMain.on("relay:stop", () => { agent.stop(); for (const [id, r] of pendingConfirms) { pendingConfirms.delete(id); r(false); } });
 ipcMain.on("relay:reset", () => agent.reset());
+
+// ---------- Past conversations (stored only on this PC) ----------
+const safely = (fn) => async (_e, arg) => { try { return { ok: true, ...(await fn(arg)) }; } catch (err) { return { ok: false, error: err.message }; } };
+ipcMain.handle("history:list", safely(() => ({ items: history.list() })));
+ipcMain.handle("history:save", safely(({ id, turns }) => ({ meta: history.save({ id, turns, contents: agent.getHistory() }) })));
+ipcMain.handle("history:open", safely((id) => { const c = history.load(id); agent.load(c.contents); return { conversation: { id: c.id, title: c.title, turns: c.turns } }; }));
+ipcMain.handle("history:delete", safely((id) => { history.remove(id); return {}; }));
+ipcMain.handle("history:clear", safely(() => { history.clear(); return {}; }));
 
 ipcMain.handle("settings:get", () => ({ ...settings.publicView(), shortcuts: { show: SHOW_SHORTCUT, voice: VOICE_SHORTCUT } }));
 ipcMain.handle("settings:set", (_e, patch) => {

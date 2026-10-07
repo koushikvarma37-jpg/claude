@@ -227,6 +227,10 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     transcribe,
     stop: () => { stopRequested = true; },
     reset: () => { history = []; generation++; stopRequested = true; },
+    /** Gemini's memory of this conversation, saved with the chat so it can be continued later */
+    getHistory: () => history.slice(),
+    /** Continue an old conversation: restore its memory */
+    load: (contents) => { generation++; stopRequested = true; history = Array.isArray(contents) ? contents.slice() : []; },
   };
 }
 
