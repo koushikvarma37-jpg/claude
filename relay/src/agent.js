@@ -72,7 +72,11 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
           lastErr = err;
           const kind = errorKind(err);
           if (kind === "missing") break;            // model not available to this key: try the next one
-          if (kind !== "busy") throw err;           // key/quota/network problems: retrying won't help
+          if (kind === "quota") {                   // this model's free limit is used up; other models have their own
+            if (allowSwitch) onEvent({ type: "retry", turnId, message: "Free limit reached for this model, switching to a backup…" });
+            break;
+          }
+          if (kind !== "busy") throw err;           // key/network problems: retrying won't help
           if (attempt < 2) {
             onEvent({ type: "retry", turnId, message: "Gemini is busy, retrying…" });
             await sleep(attempt === 0 ? 800 : 2000);
@@ -109,10 +113,11 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     const stepId = `${turnId}-q`;
     onEvent({ type: "step", turnId, stepId, tool: q.tool, args: q.args, state: "running" });
     let result;
-    try { result = await toolkit.tools[q.tool].run(q.args); }
+    try { result = await execute({ name: q.tool, args: q.args }, turnId, stepId); } // execute() shows the approval card when needed
     catch (err) { onEvent({ type: "step-update", turnId, stepId, state: "failed", detail: err.message }); return { text: err.message, failed: true }; }
     if (result.error === "not_installed") { onEvent({ type: "step-remove", turnId, stepId }); return null; }
-    onEvent({ type: "step-update", turnId, stepId, state: "done", detail: result.summary, undoable: !!result.undoable });
+    onEvent({ type: "step-update", turnId, stepId, state: result.declined ? "cancelled" : "done", detail: result.summary, undoable: !!result.undoable });
+    if (result.declined) { trimHistory(); history.push({ role: "user", parts: [{ text }] }, { role: "model", parts: [{ text: "Cancelled." }] }); return { text: "Cancelled. Nothing was changed.", quick: true }; }
     const reply = /[.!?]$/.test(result.summary) ? result.summary : result.summary + ".";
     trimHistory();
     history.push({ role: "user", parts: [{ text }] }, { role: "model", parts: [{ text: reply }] }); // so "close it" / "undo that" have context
@@ -221,6 +226,7 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
 function errorKind(err) {
   const msg = String((err && err.message) || err);
   const status = err && (err.status || err.code);
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) return "quota";
   if (status === 503 || status === 500 || status === 504 || /UNAVAILABLE|overloaded|INTERNAL|DEADLINE_EXCEEDED|try again later/i.test(msg)) return "busy";
   if (status === 404 || /is not found|NOT_FOUND|not supported for generateContent/i.test(msg)) return "missing";
   return "other";
@@ -230,7 +236,12 @@ function errorKind(err) {
 function friendlyError(err) {
   const msg = String((err && err.message) || err);
   const status = err && (err.status || err.code);
-  if (status === 429 || /RESOURCE_EXHAUSTED|429|quota/i.test(msg)) return "Gemini's free-tier limit was reached. Wait a minute and try again.";
+  if (status === 429 || /RESOURCE_EXHAUSTED|429|quota/i.test(msg)) {
+    if (/PerDay/i.test(msg)) return "Today's free Gemini limit is used up on every model your key can use. It resets in about a day; until then, simple commands like \"open WhatsApp\" or \"sort my downloads\" still work.";
+    const wait = msg.match(/retry in ([\d.]+)\s*s|"retryDelay":\s*"(\d+)s"/i);
+    const secs = wait ? Math.ceil(parseFloat(wait[1] || wait[2])) : null;
+    return `Gemini's free per-minute limit was reached. Try again in ${secs ? secs + " seconds" : "a minute"}.`;
+  }
   if (status === 401 || status === 403 || /API key not valid|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) return "Your Gemini API key was rejected. Check it in Settings.";
   if (status === 404 || /not found for API version|is not found|NOT_FOUND/i.test(msg)) return "That Gemini model isn't available to your key. Pick another model in Settings.";
   if (/fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|network/i.test(msg)) return "Can't reach Gemini. Check your internet connection.";

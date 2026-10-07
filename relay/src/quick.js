@@ -23,6 +23,16 @@ function createQuick({ apps }) {
 
     if (/^(?:undo|undo (?:that|it|the last (?:change|action))|revert (?:that|it))$/i.test(t)) return { tool: "undo_last", args: {} };
 
+    // "sort my downloads", "organize the desktop folder", "clean up downloads" (still asks for approval)
+    if ((m = t.match(/^(?:please\s+)?(?:sort|organi[sz]e|tidy(?: up)?|clean(?: up)?|arrange)\s+(?:my\s+|the\s+)?(desktop|downloads|documents|pictures|music|videos)(?:\s+folder)?(?:\s+by\s+(?:file\s+)?type)?$/i))) {
+      return { tool: "organize_folder", args: { path: m[1] } };
+    }
+    // "make a folder called DSP notes", "create a new folder named X on the desktop / in documents"
+    if ((m = t.match(/^(?:please\s+)?(?:make|create)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called|named)\s+["']?(.+?)["']?(?:\s+(?:on|in)\s+(?:my\s+|the\s+)?(desktop|downloads|documents|pictures|music|videos))?(?:\s+folder)?$/i))) {
+      const name = m[1].trim();
+      if (!/[\\/:*?"<>|]/.test(name) && !COMPLEX.test(name) && name.length <= 60) return { tool: "create_folder", args: { path: `${m[2] || "Desktop"}/${name}` } };
+    }
+
     if ((m = t.match(/^(?:search|look up|find)\s+(youtube|google)\s+for\s+(.+)$/i)) ||
         (m = t.match(/^(youtube|google)\s+(.+)$/i))) {
       return { tool: "web_search", args: { site: m[1].toLowerCase(), query: m[2] } };

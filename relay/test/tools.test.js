@@ -317,8 +317,12 @@ test("quick: takes simple commands, leaves the rest to Gemini", async () => {
   assert.deepEqual(await q.match("search dsp notes on google"), { tool: "web_search", args: { site: "google", query: "dsp notes" } });
   assert.deepEqual(await q.match("undo that"), { tool: "undo_last", args: {} });
   // must go to Gemini:
-  for (const t of ["open whatsapp and message mom", "make a folder called x", "open my resume", "open report.pdf",
-                   "open the folder with my notes", "open photoshop", "sort my downloads", "what is a fourier transform?",
+  assert.deepEqual(await q.match("sort my downloads"), { tool: "organize_folder", args: { path: "downloads" } });
+  assert.deepEqual(await q.match("Organize the Desktop folder by type"), { tool: "organize_folder", args: { path: "Desktop" } });
+  assert.deepEqual(await q.match("make a folder called DSP notes"), { tool: "create_folder", args: { path: "Desktop/DSP notes" } });
+  assert.deepEqual(await q.match("create a new folder named Sem 5 in documents"), { tool: "create_folder", args: { path: "documents/Sem 5" } });
+  for (const t of ["open whatsapp and message mom", "make a folder called Hackathon and move my pdfs into it", "open my resume", "open report.pdf",
+                   "open the folder with my notes", "open photoshop", "sort my college folder", "what is a fourier transform?",
                    "open downloads, then sort it", "open all pdfs from downloads"]) {
     assert.equal(await q.match(t), null, t);
   }
@@ -334,5 +338,36 @@ test("agent: quick commands skip Gemini and need no API key", async () => {
   const out = await agent.run("open whatsapp", { turnId: "t" });
   assert.equal(out.text, "Opened WhatsApp.");
   assert.equal(out.quick, true);
-  await assert.rejects(agent.run("make a folder called x", { turnId: "u" }), /no key/);
+  await assert.rejects(agent.run("move my pdfs to college", { turnId: "u" }), /no key/);
+});
+
+test("quick: organizing still asks first, and declining changes nothing", async () => {
+  const sb = sandbox();
+  sb.touch(sb.known.downloads, "a.pdf");
+  let asked = 0;
+  const mk = (answer) => createAgent({ getClient: () => { throw new Error("should not call Gemini"); }, getModel: () => "m",
+    quick: createQuick({ apps: fakeApps }), toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => { asked++; return answer; } });
+  assert.equal((await mk(false).run("sort my downloads", { turnId: "a" })).text, "Cancelled. Nothing was changed.");
+  assert.deepEqual(fs.readdirSync(sb.known.downloads), ["a.pdf"]);
+  assert.match((await mk(true).run("sort my downloads", { turnId: "b" })).text, /^Sorted 1 files/);
+  assert.ok(fs.existsSync(path.join(sb.known.downloads, "PDFs", "a.pdf")));
+  assert.equal(asked, 2);
+});
+
+test("free-tier limit: switches to a model with its own quota", async () => {
+  const sb = sandbox();
+  const limit = () => Object.assign(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"Quota exceeded ... GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}}'), { status: 429 });
+  const g = fakeGemini([limit(), { text: "From backup" }]);
+  const events = [];
+  const agent = createAgent({ getClient: () => g.client, getModel: () => "main", getFallbackModels: async () => ["backup"], toolkit: sb.toolkit, paths: sb.paths, onEvent: (e) => events.push(e), askConfirm: async () => true, sleep: async () => {} });
+  assert.equal((await agent.run("hi", { turnId: "t" })).text, "From backup");
+  assert.deepEqual(g.calls, ["main", "backup"], "no pointless retries on the limited model");
+  assert.ok(events.some((e) => e.type === "retry" && /backup/.test(e.message)));
+});
+
+test("free-tier limit messages say what to do", () => {
+  const { friendlyError } = require("../src/agent");
+  assert.match(friendlyError(Object.assign(new Error("Quota exceeded for GenerateRequestsPerDayPerProjectPerModel-FreeTier"), { status: 429 })), /Today's free Gemini limit/);
+  assert.match(friendlyError(Object.assign(new Error('RESOURCE_EXHAUSTED "retryDelay": "37s"'), { status: 429 })), /Try again in 37 seconds/);
+  assert.match(friendlyError(Object.assign(new Error("RESOURCE_EXHAUSTED"), { status: 429 })), /Try again in a minute/);
 });

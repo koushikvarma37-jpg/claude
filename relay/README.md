@@ -42,7 +42,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-1.3.1.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-1.3.2.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 
@@ -53,7 +53,7 @@ On first launch, paste a free Gemini key from **https://aistudio.google.com/apik
 - **Ctrl+Shift+M**: open Relay and start listening.
 - Closing the window keeps Relay running in the **system tray** (the ^ arrow near the clock). Right-click the tray icon for **Start listening**, **Start with Windows** and **Quit Relay**.
 - Relay **starts with Windows** by default and waits quietly in the tray. Turn this off in Settings or the tray menu.
-- **Instant commands** run immediately without asking Gemini, and work offline: `open whatsapp`, `open downloads`, `open youtube`, `open github.com/...`, `search youtube for …`, `google …`, `undo`.
+- **Instant commands** run immediately without asking Gemini (and work offline or when the free limit is used up): `open whatsapp`, `open downloads`, `open youtube`, `search youtube for …`, `google …`, `sort my downloads`, `make a folder called …`, `undo`.
 
 ### Run from source (for development)
 ```
