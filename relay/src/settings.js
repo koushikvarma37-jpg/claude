@@ -46,12 +46,13 @@ function createSettings({ dir, safeStorage }) {
       model: data.model,
       speakReplies: data.speakReplies,
       autoRunVoice: data.autoRunVoice,
+      startWithWindows: !!data.startWithWindows,
     };
   }
 
   function update(patch) {
     if (typeof patch.apiKey === "string" && patch.apiKey.trim()) setApiKey(patch.apiKey);
-    for (const k of ["model", "speakReplies", "autoRunVoice"]) if (k in patch) data[k] = patch[k];
+    for (const k of ["model", "speakReplies", "autoRunVoice", "startWithWindows", "trayHintShown"]) if (k in patch) data[k] = patch[k];
     save();
     return publicView();
   }

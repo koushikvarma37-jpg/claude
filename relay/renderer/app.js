@@ -210,6 +210,7 @@
     if (ev.type === "retry") { showThinking(turn, true); turn.thinkingEl.lastElementChild.textContent = ev.message; setStatus("thinking", "Retrying"); }
     if (ev.type === "step") { addStep(turn, ev); setStatus("working", "Working"); }
     if (ev.type === "step-update") updateStep(turn, ev);
+    if (ev.type === "step-remove") { const li = turn.steps.get(ev.stepId); if (li) li.remove(); turn.steps.delete(ev.stepId); }
     if (ev.type === "confirm") showConfirm(turn, ev);
   });
 
@@ -329,6 +330,7 @@
     $("#keyInput").placeholder = settings.hasKey ? `Saved ${settings.keyHint} · paste to replace` : "Paste your key";
     $("#speakToggle").checked = !!settings.speakReplies;
     $("#autoRunToggle").checked = !!settings.autoRunVoice;
+    $("#startToggle").checked = !!settings.startWithWindows;
     if (!$("#modelSelect").options.length) fillModels([]);
   }
 
@@ -353,6 +355,8 @@
   });
   $("#speakToggle").addEventListener("change", async (e) => { settings = await window.relay.settings.set({ speakReplies: e.target.checked }); });
   $("#autoRunToggle").addEventListener("change", async (e) => { settings = await window.relay.settings.set({ autoRunVoice: e.target.checked }); });
+  $("#startToggle").addEventListener("change", async (e) => { settings = await window.relay.settings.set({ startWithWindows: e.target.checked }); });
+  $("#quitBtn").addEventListener("click", () => window.relay.window.quit());
 
   // Links anywhere in the window open in the browser
   document.addEventListener("click", (e) => {

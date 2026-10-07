@@ -1,6 +1,6 @@
 // Electron main process: creates the window, registers shortcuts,
 // and connects the UI to the agent, tools and settings.
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, safeStorage, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
 const { createPaths } = require("./src/paths");
@@ -8,12 +8,15 @@ const { createTools } = require("./src/tools");
 const { createApps } = require("./src/apps");
 const { createAgent, friendlyError } = require("./src/agent");
 const { createSettings } = require("./src/settings");
+const { createQuick } = require("./src/quick");
 
 const SHOW_SHORTCUT = "Control+Shift+Space";
 const VOICE_SHORTCUT = "Control+Shift+M";
 
-let win = null;
+let win = null, tray = null;
+let quitting = false;
 let settings, agent, toolkit;
+const startHidden = process.argv.includes("--hidden"); // launched by Windows at sign-in
 let client = null, clientKey = "";
 const pendingConfirms = new Map();
 
@@ -56,10 +59,52 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => { if (!startHidden) win.show(); });
+  // Closing the window keeps Relay running in the tray, so the shortcut always works
+  win.on("close", (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    win.hide();
+    if (!settings.get("trayHintShown") && tray) {
+      tray.displayBalloon({ title: "Relay is still running", content: "It's in the system tray. Press Ctrl+Shift+Space to bring it back.", iconType: "info" });
+      settings.update({ trayHintShown: true });
+    }
+  });
   // Links clicked in replies open in the real browser, never inside Relay
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: "deny" }; });
   win.webContents.on("will-navigate", (e) => e.preventDefault());
+}
+
+// ---------- Tray & start with Windows ----------
+function loginItemOptions(enabled) {
+  // Packaged app: Relay.exe --hidden. During development: electron.exe <app folder> --hidden
+  return app.isPackaged
+    ? { openAtLogin: enabled, args: ["--hidden"] }
+    : { openAtLogin: enabled, path: process.execPath, args: [app.getAppPath(), "--hidden"] };
+}
+function setStartWithWindows(enabled) {
+  if (process.platform === "win32" || process.platform === "darwin") app.setLoginItemSettings(loginItemOptions(enabled));
+  settings.update({ startWithWindows: enabled });
+  refreshTrayMenu();
+}
+
+function createTray() {
+  const img = nativeImage.createFromPath(path.join(__dirname, "renderer", "icon.png")).resize({ width: 16, height: 16 });
+  tray = new Tray(img);
+  tray.setToolTip("Relay: Ctrl+Shift+Space");
+  tray.on("click", () => (win.isVisible() && win.isFocused() ? win.hide() : showWindow()));
+  refreshTrayMenu();
+}
+function refreshTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Relay", accelerator: SHOW_SHORTCUT, click: () => { showWindow(); send({ type: "focus-input" }); } },
+    { label: "Start listening", accelerator: VOICE_SHORTCUT, click: () => { showWindow(); send({ type: "start-voice" }); } },
+    { type: "separator" },
+    { label: "Start with Windows", type: "checkbox", checked: !!settings.get("startWithWindows"), click: (item) => setStartWithWindows(item.checked) },
+    { type: "separator" },
+    { label: "Quit Relay", click: () => { quitting = true; app.quit(); } },
+  ]));
 }
 
 function showWindow() {
@@ -78,10 +123,16 @@ app.whenReady().then(() => {
   apps.load(); // warm the app list in the background
   toolkit = createTools({ paths, apps, openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u), trash: (p) => shell.trashItem(p) });
 
+  // First run of the installed app: start with Windows by default (can be turned off in Settings or the tray)
+  if (settings.get("startWithWindows") === undefined) {
+    if (app.isPackaged) setStartWithWindows(true); else settings.update({ startWithWindows: false });
+  }
+
   agent = createAgent({
     getClient, toolkit, paths,
     getModel: () => settings.get("model") || "gemini-flash-latest",
     getFallbackModels,
+    quick: createQuick({ apps }),
     onEvent: send,
     askConfirm: (plan) => new Promise((resolve) => {
       const id = `c${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -95,6 +146,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((wc, permission) => permission === "media");
 
   createWindow();
+  createTray();
 
   globalShortcut.register(SHOW_SHORTCUT, () => {
     if (win.isVisible() && win.isFocused()) win.hide(); else { showWindow(); send({ type: "focus-input" }); }
@@ -104,7 +156,8 @@ app.whenReady().then(() => {
 
 app.on("second-instance", showWindow);
 app.on("will-quit", () => globalShortcut.unregisterAll());
-app.on("window-all-closed", () => app.quit());
+app.on("before-quit", () => { quitting = true; });
+app.on("window-all-closed", () => { if (quitting) app.quit(); });
 
 // ---------- IPC ----------
 ipcMain.handle("relay:run", async (_e, { text, turnId }) => {
@@ -129,7 +182,11 @@ ipcMain.on("relay:stop", () => { agent.stop(); for (const [id, r] of pendingConf
 ipcMain.on("relay:reset", () => agent.reset());
 
 ipcMain.handle("settings:get", () => ({ ...settings.publicView(), shortcuts: { show: SHOW_SHORTCUT, voice: VOICE_SHORTCUT } }));
-ipcMain.handle("settings:set", (_e, patch) => { fallbackCache = null; return settings.update(patch || {}); });
+ipcMain.handle("settings:set", (_e, patch) => {
+  fallbackCache = null;
+  if (patch && typeof patch.startWithWindows === "boolean") setStartWithWindows(patch.startWithWindows);
+  return settings.update(patch || {});
+});
 ipcMain.handle("settings:models", async () => {
   try {
     const ai = getClient();
@@ -148,5 +205,6 @@ ipcMain.handle("settings:models", async () => {
 
 ipcMain.on("window:minimize", () => win && win.minimize());
 ipcMain.on("window:hide", () => win && win.hide());
-ipcMain.on("window:close", () => app.quit());
+ipcMain.on("window:close", () => win && win.close()); // hides to the tray (see the "close" handler)
+ipcMain.on("app:quit", () => { quitting = true; app.quit(); });
 ipcMain.on("open:link", (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });

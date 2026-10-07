@@ -30,7 +30,7 @@
       </button>
       <span class="sep"></span>
       <button class="icon-btn" id="minBtn" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
-      <button class="icon-btn close" id="closeBtn" title="Quit Relay" aria-label="Quit Relay"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="icon-btn close" id="closeBtn" title="Hide. Relay keeps running in the tray" aria-label="Hide Relay"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
   </header>
 
@@ -101,6 +101,7 @@
       <section class="group">
         <label class="toggle"><input type="checkbox" id="speakToggle" /><span class="track"><i></i></span><span>Speak short replies when I use my voice</span></label>
         <label class="toggle"><input type="checkbox" id="autoRunToggle" /><span class="track"><i></i></span><span>Run voice commands straight away, without showing the transcript first</span></label>
+        <label class="toggle"><input type="checkbox" id="startToggle" /><span class="track"><i></i></span><span>Start Relay when Windows starts (it waits quietly in the tray)</span></label>
       </section>
       <section class="group">
         <div class="lbl">Shortcuts</div>
@@ -110,6 +111,10 @@
           <dt><kbd>Ctrl</kbd>+<kbd>M</kbd></dt><dd>Start or stop the mic</dd>
           <dt><kbd>Esc</kbd></dt><dd>Cancel, or hide the window</dd>
         </dl>
+      </section>
+      <section class="group">
+        <div class="lbl">Relay keeps running in the system tray when you close the window, so the shortcuts always work.</div>
+        <div><button class="btn ghost" id="quitBtn" type="button">Quit Relay completely</button></div>
       </section>
     </div>
   </aside>

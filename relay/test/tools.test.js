@@ -23,7 +23,7 @@ function sandbox() {
     trash: async (p) => { trashed.push(p); fs.rmSync(p, { recursive: true }); },
     openPath: async (p) => { opened.push(p); return ""; },
     openExternal: async (u) => { opened.push(u); },
-    apps: { launch: async (n) => (n === "WhatsApp" ? { ok: true, name: "WhatsApp" } : { ok: false, suggestions: ["Whatsapp Beta"] }) },
+    apps: { launch: async (n) => (n.toLowerCase() === "whatsapp" ? { ok: true, name: "WhatsApp" } : { ok: false, reason: "not_found", suggestions: ["Whatsapp Beta"] }) },
   });
   const touch = (...p) => { const f = path.join(...p); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, "x"); return f; };
   return { home, known, paths, toolkit, t: toolkit.tools, trashed, opened, touch };
@@ -294,4 +294,45 @@ test("a bad key is not retried", async () => {
   const agent = createAgent({ getClient: () => g.client, getModel: () => "main", toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true, sleep: async () => {} });
   await assert.rejects(agent.run("hi", { turnId: "t" }), /API key/);
   assert.equal(g.calls.length, 1);
+});
+
+// ---------- Instant commands ----------
+const { createQuick } = require("../src/quick");
+const fakeApps = { find: async (n) => {
+  const names = { whatsapp: "WhatsApp", perplexity: "Perplexity", "vs code": "Visual Studio Code", google: "Google Chrome", youtube: null };
+  const key = n.toLowerCase();
+  if (names[key]) return [{ a: { Name: names[key] }, s: key === "google" ? 85 : 100 }];
+  return [];
+} };
+
+test("quick: takes simple commands, leaves the rest to Gemini", async () => {
+  const q = createQuick({ apps: fakeApps });
+  assert.deepEqual(await q.match("open WhatsApp"), { tool: "open_app", args: { name: "WhatsApp" } });
+  assert.deepEqual(await q.match("Launch the Perplexity app."), { tool: "open_app", args: { name: "Perplexity" } });
+  assert.deepEqual(await q.match("open downloads"), { tool: "open_path", args: { path: "downloads" } });
+  assert.deepEqual(await q.match("open youtube"), { tool: "open_url", args: { url: "https://www.youtube.com" } });
+  assert.deepEqual(await q.match("open google"), { tool: "open_url", args: { url: "https://www.google.com" } }, "site beats a partial app match");
+  assert.deepEqual(await q.match("open github.com/tejavarma15"), { tool: "open_url", args: { url: "github.com/tejavarma15" } });
+  assert.deepEqual(await q.match("search youtube for arduino projects"), { tool: "web_search", args: { site: "youtube", query: "arduino projects" } });
+  assert.deepEqual(await q.match("search dsp notes on google"), { tool: "web_search", args: { site: "google", query: "dsp notes" } });
+  assert.deepEqual(await q.match("undo that"), { tool: "undo_last", args: {} });
+  // must go to Gemini:
+  for (const t of ["open whatsapp and message mom", "make a folder called x", "open my resume", "open report.pdf",
+                   "open the folder with my notes", "open photoshop", "sort my downloads", "what is a fourier transform?",
+                   "open downloads, then sort it", "open all pdfs from downloads"]) {
+    assert.equal(await q.match(t), null, t);
+  }
+});
+
+test("agent: quick commands skip Gemini and need no API key", async () => {
+  const sb = sandbox();
+  const agent = createAgent({
+    getClient: () => { throw Object.assign(new Error("no key"), { code: "NO_KEY" }); },
+    getModel: () => "m", quick: createQuick({ apps: fakeApps }), toolkit: sb.toolkit, paths: sb.paths,
+    onEvent: () => {}, askConfirm: async () => true,
+  });
+  const out = await agent.run("open whatsapp", { turnId: "t" });
+  assert.equal(out.text, "Opened WhatsApp.");
+  assert.equal(out.quick, true);
+  await assert.rejects(agent.run("make a folder called x", { turnId: "u" }), /no key/);
 });

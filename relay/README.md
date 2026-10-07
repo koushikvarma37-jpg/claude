@@ -40,22 +40,28 @@ Results go back to Gemini ──►  next step, or a short final reply
 
 The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so it broke on anything new. Relay uses **tool calling**: Gemini reads your sentence and picks from general tools (`find_files`, `move_files`, `organize_folder`, `open_app`, …) with the right arguments, so new phrasings work without new code.
 
-## Setup (Windows)
+## Install (Windows)
 
-You need **Node.js** (LTS) and a free **Gemini API key**.
+**Easiest:** run **`Relay-Setup-1.3.0.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
-1. Download this folder and open it in **Command Prompt** (or the VS Code terminal).
-2. Install the dependencies (one time, takes a minute or two):
-   ```
-   npm install
-   ```
-3. Start Relay:
-   ```
-   npm start
-   ```
-4. On first launch, Relay asks for your key. Get one at **https://aistudio.google.com/apikey** → **Create API key**, paste it, and click **Connect**.
+> Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 
-That's it. Press **Ctrl+Shift+Space** anywhere in Windows to show or hide Relay, or **Ctrl+Shift+M** to open it and start listening.
+On first launch, paste a free Gemini key from **https://aistudio.google.com/apikey** and click **Connect**.
+
+### Everyday use
+- **Ctrl+Shift+Space**: show or hide Relay from anywhere.
+- **Ctrl+Shift+M**: open Relay and start listening.
+- Closing the window keeps Relay running in the **system tray** (the ^ arrow near the clock). Right-click the tray icon for **Start listening**, **Start with Windows** and **Quit Relay**.
+- Relay **starts with Windows** by default and waits quietly in the tray. Turn this off in Settings or the tray menu.
+- **Instant commands** run immediately without asking Gemini, and work offline: `open whatsapp`, `open downloads`, `open youtube`, `open github.com/...`, `search youtube for …`, `google …`, `undo`.
+
+### Run from source (for development)
+```
+npm install
+npm start          # run Relay
+npm test           # run the tests
+npm run dist       # build dist/Relay-Setup-<version>.exe
+```
 
 ### If the mic doesn't work
 Open Windows **Settings → Privacy & security → Microphone**, then turn on **Microphone access** and **Let desktop apps access your microphone**.
@@ -76,10 +82,11 @@ Gemini's free tier allows a limited number of requests per minute. Wait a minute
 
 ```
 relay/
-├── main.js            Electron main process: window, shortcuts, connects UI ↔ agent
+├── main.js            Electron main process: window, tray, startup, shortcuts, connects UI ↔ agent
 ├── preload.js         The safe bridge the UI uses to talk to main.js
 ├── src/
-│   ├── agent.js       Gemini loop: tool calling, approvals, voice transcription
+│   ├── agent.js       Gemini loop: tool calling, approvals, retries, voice transcription
+│   ├── quick.js       Instant commands that skip Gemini (open app/site/folder, search, undo)
 │   ├── tools.js       File, app and web tools (with plan + undo)
 │   ├── apps.js        Finds installed apps via Windows' Start menu list
 │   ├── paths.js       Turns "Desktop/DSP notes" into real paths, blocks system folders
@@ -89,7 +96,8 @@ relay/
 │   ├── styles.css     The design
 │   ├── app.js         UI logic: steps, approvals, mic, settings
 │   └── recorder.js    Mic recording, live waveform, auto-stop on pause
-└── test/              Tests for tools, agent loop and app matching (npm test)
+├── build/icon.png     App icon used by the installer
+└── test/              Tests for tools, agent loop, instant commands and app matching (npm test)
 ```
 
 ## Adding a new ability

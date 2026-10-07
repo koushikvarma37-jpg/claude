@@ -37,7 +37,7 @@ How to reply:
 - If a command is unclear or the transcript looks garbled, ask a short clarifying question instead of guessing.`;
 }
 
-function createAgent({ getClient, getModel, getFallbackModels = async () => [], toolkit, paths, onEvent, askConfirm, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+function createAgent({ getClient, getModel, getFallbackModels = async () => [], quick = null, toolkit, paths, onEvent, askConfirm, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let history = [];
   let stopRequested = false;
   let preferredFallback = null; // a model that worked when the main one was busy; reused for a while
@@ -104,8 +104,27 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
     return tool.run(args);
   }
 
+  /** Runs a simple command directly (see quick.js). Returns null if it should go to Gemini after all. */
+  async function runQuick(q, text, turnId) {
+    const stepId = `${turnId}-q`;
+    onEvent({ type: "step", turnId, stepId, tool: q.tool, args: q.args, state: "running" });
+    let result;
+    try { result = await toolkit.tools[q.tool].run(q.args); }
+    catch (err) { onEvent({ type: "step-update", turnId, stepId, state: "failed", detail: err.message }); return { text: err.message, failed: true }; }
+    if (result.error === "not_installed") { onEvent({ type: "step-remove", turnId, stepId }); return null; }
+    onEvent({ type: "step-update", turnId, stepId, state: "done", detail: result.summary, undoable: !!result.undoable });
+    const reply = /[.!?]$/.test(result.summary) ? result.summary : result.summary + ".";
+    trimHistory();
+    history.push({ role: "user", parts: [{ text }] }, { role: "model", parts: [{ text: reply }] }); // so "close it" / "undo that" have context
+    return { text: reply, quick: true };
+  }
+
   async function run(text, { turnId }) {
     stopRequested = false;
+    if (quick) {
+      const q = await quick.match(text).catch(() => null);
+      if (q) { const out = await runQuick(q, text, turnId); if (out) return out; }
+    }
     const ai = getClient();
     trimHistory();
     const startLen = history.length;

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("relay", {
     minimize: () => ipcRenderer.send("window:minimize"),
     hide: () => ipcRenderer.send("window:hide"),
     close: () => ipcRenderer.send("window:close"),
+    quit: () => ipcRenderer.send("app:quit"),
   },
   openLink: (url) => ipcRenderer.send("open:link", url),
 });
