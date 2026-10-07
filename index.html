@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Teja Varma Portfolio</title>
-<meta name="description" content="Teja Varma, ECE student at Vishnu Institute of Technology, learning AI and building Orbit, an AI desktop agent." />
+<meta name="description" content="Teja Varma, ECE student at Vishnu Institute of Technology, learning AI and building Relay, an AI desktop agent for Windows." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='7' y='4' width='18' height='24' rx='2' fill='%23101314'/><g fill='%23101314'><rect x='2' y='8' width='5' height='2'/><rect x='2' y='15' width='5' height='2'/><rect x='2' y='22' width='5' height='2'/><rect x='25' y='8' width='5' height='2'/><rect x='25' y='15' width='5' height='2'/><rect x='25' y='22' width='5' height='2'/></g><circle cx='11' cy='8' r='1.6' fill='%23f2d024'/></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -239,47 +239,34 @@ p { margin: 0 0 1rem; }
   @keyframes wire-v { 0% { transform: translateY(0); opacity: 0; } 15%, 85% { opacity: 1; } 100% { transform: translateY(calc(1.8rem - 10px)); opacity: 0; } }
 }
 
-/* Orbit */
-.status { display: inline-flex; align-items: center; gap: .55rem; border: 1px solid var(--ch2); color: var(--ch2); font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; padding: .35rem .7rem; margin-bottom: 1.4rem; }
-.status i { width: 7px; height: 7px; background: var(--ch2); animation: blink 1.2s infinite; }
-.orbit-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(2rem, 4vw, 3.5rem); align-items: start; }
+/* Relay */
+.status { display: inline-flex; align-items: center; gap: .55rem; border: 1px solid var(--ch1); color: var(--ch1); font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; padding: .35rem .7rem; margin-bottom: 1.4rem; }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: #2fbf71; box-shadow: 0 0 0 3px color-mix(in srgb, #2fbf71 25%, transparent); }
+.relay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 4vw, 3.5rem); align-items: start; margin-top: clamp(2rem, 4vw, 3rem); }
 .spec-table { width: 100%; border-collapse: collapse; margin-top: 1.6rem; font-size: .92rem; }
 .spec-table th, .spec-table td { text-align: left; padding: .65rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
-.spec-table th { font-family: var(--mono); font-weight: 400; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); width: 9rem; padding-top: .8rem; }
+.spec-table th { font-family: var(--mono); font-weight: 400; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); width: 8rem; padding-top: .8rem; padding-right: 1rem; }
 .spec-table tr:first-child th, .spec-table tr:first-child td { border-top: 1px solid var(--ink); }
 
-.app { border: 1px solid var(--ink); background: var(--paper); box-shadow: 10px 10px 0 color-mix(in srgb, var(--ink) 12%, transparent); min-width: 0; }
-.app-bar { display: flex; align-items: center; gap: .8rem; padding: .7rem 1rem; border-bottom: 1px solid var(--ink); font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; }
-.app-bar .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--ch1); position: relative; }
-.app-bar .dot::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--ch1); }
-.app-bar .conn { margin-left: auto; color: var(--ink-2); display: flex; align-items: center; gap: .45rem; }
-.app-bar .conn i { width: 6px; height: 6px; border-radius: 50%; background: #2fbf71; }
-.cmd { display: flex; align-items: center; gap: .7rem; padding: .9rem 1rem; border-bottom: 1px solid var(--rule); }
-.cmd label { font-family: var(--mono); color: var(--ch1); font-weight: 600; }
-.cmd input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink); font-family: var(--mono); font-size: .9rem; outline: none; }
-.cmd input::placeholder { color: var(--ink-2); opacity: .8; }
-.cmd button { all: unset; cursor: pointer; font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; border: 1px solid var(--ink); padding: .4rem .7rem; }
-.cmd button:hover { background: var(--ink); color: var(--paper); }
-.cmd button:focus-visible { outline: 2px solid var(--ch1); outline-offset: 2px; }
-.pipe { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 1.3rem 1rem 1.1rem; border-bottom: 1px solid var(--rule); }
-.pipe-line { position: absolute; left: calc(1rem + 12.5% - .5rem); right: calc(1rem + 12.5% - .5rem); top: calc(1.3rem + 6px); height: 1px; background: var(--rule); }
-.pipe-fill { position: absolute; inset: 0; background: var(--ch1); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform .55s var(--ease); }
-.st { position: relative; display: grid; justify-items: center; gap: .55rem; text-align: center; }
-.st i { width: 13px; height: 13px; border: 1.5px solid var(--ink-2); background: var(--paper); transition: background .35s, border-color .35s, transform .35s var(--ease); }
-.st span { font-family: var(--mono); font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); transition: color .35s; }
-.st.on i { background: var(--ch1); border-color: var(--ch1); transform: rotate(45deg); }
-.st.on span { color: var(--ink); }
-.log { height: 220px; overflow-y: auto; padding: .9rem 1rem; font-family: var(--mono); font-size: .8rem; line-height: 1.65; }
-.log p { margin: 0; white-space: pre-wrap; word-break: break-word; animation: logIn .45s var(--ease); }
-.log .u { color: var(--ink); font-weight: 600; } .log .s { color: var(--ink-2); } .log .d { color: var(--ch1); }
-.log .sep { border-top: 1px dashed var(--rule); margin: .6rem 0; }
-@keyframes logIn { from { opacity: 0; transform: translateY(6px); } }
-.examples { display: flex; flex-wrap: wrap; gap: .4rem; padding: .8rem 1rem; border-top: 1px solid var(--rule); }
-.examples button { all: unset; cursor: pointer; font-family: var(--mono); font-size: .7rem; padding: .32rem .6rem; border: 1px solid var(--rule); color: var(--ink-2); transition: border-color .3s, color .3s; }
-.examples button:hover { border-color: var(--ch1); color: var(--ink); }
-.examples button:focus-visible { outline: 2px solid var(--ch1); outline-offset: 2px; }
-.note { margin-top: .9rem; font-family: var(--mono); font-size: .7rem; color: var(--ink-2); }
-@media (max-width: 960px) { .orbit-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Demo recording, framed like a capture instrument */
+.demo { border: 1px solid var(--ink); background: var(--chip); padding: 10px; }
+.demo-top { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--chip-text); font-family: var(--mono); font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; padding: 2px 4px 9px; }
+.demo-top .rec::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; margin-right: .55em; vertical-align: 0; animation: blink 1.4s infinite; }
+.demo video { display: block; width: 100%; max-width: 100%; aspect-ratio: 1600 / 898; height: auto; background: #0b0d0e; }
+.chapters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 10px; background: color-mix(in srgb, var(--chip-text) 20%, transparent); }
+.chapters button { all: unset; cursor: pointer; background: var(--chip); padding: .55rem .65rem; font-family: var(--mono); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; color: var(--chip-text); transition: background .25s, color .25s; min-width: 0; }
+.chapters button b { display: block; font-weight: 500; font-size: .8rem; color: #fff; letter-spacing: .02em; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chapters button:hover { background: color-mix(in srgb, var(--chip-text) 12%, var(--chip)); }
+.chapters button.on { box-shadow: inset 0 2px 0 var(--trace1); color: var(--trace1); }
+.chapters button:focus-visible { outline: 2px solid var(--trace1); outline-offset: -2px; }
+.demo-note { margin-top: .8rem; font-family: var(--mono); font-size: .7rem; color: var(--ink-2); }
+.caps { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--ink); }
+.caps li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 1rem; padding: .7rem 0; border-bottom: 1px solid var(--rule); font-size: .95rem; }
+.caps li span:first-child { font-family: var(--mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ch1); padding-top: .2rem; }
+.story { margin-top: 1.6rem; padding: 1rem 1.2rem; border-left: 3px solid var(--ch2); background: color-mix(in srgb, var(--ch2) 6%, transparent); color: var(--ink-2); font-size: .95rem; }
+.story strong { color: var(--ink); }
+@media (max-width: 960px) { .relay-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .chapters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .caps li { grid-template-columns: minmax(0, 1fr); gap: .2rem; } }
 
 /* Pinout */
 .pin-grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: clamp(2rem, 4vw, 3.5rem); align-items: start; }
@@ -384,7 +371,7 @@ footer { border-top: 1px solid var(--ink); }
     <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="nav">Menu</button>
     <ul class="nav" id="nav">
       <li><a href="#overview">Overview</a></li>
-      <li><a href="#orbit">Orbit</a></li>
+      <li><a href="#relay">Relay</a></li>
       <li><a href="#pinout">Skills</a></li>
       <li><a href="#log">Field log</a></li>
       <li><a href="#contact">Contact</a></li>
@@ -417,11 +404,11 @@ footer { border-top: 1px solid var(--ink); }
         <p class="hero-lede">Electronics engineer in training, <em>learning to build intelligent systems.</em></p>
         <ul class="spec-list">
           <li><span>Currently</span><span>3rd year, B.Tech ECE</span></li>
-          <li><span>Building</span><span>Orbit, an AI agent for the desktop</span></li>
+          <li><span>Built</span><span>Relay, an AI agent for Windows</span></li>
           <li><span>Learning</span><span>Python and machine learning</span></li>
         </ul>
         <div class="cta">
-          <a class="btn solid" href="#orbit">See Orbit <span class="arr">→</span></a>
+          <a class="btn solid" href="#relay">See Relay <span class="arr">→</span></a>
           <a class="btn" href="#contact">Get in touch</a>
         </div>
       </div>
@@ -438,7 +425,7 @@ footer { border-top: 1px solid var(--ink); }
         <div class="scope-bottom">
           <div>Freq<b>3rd year</b></div>
           <div>Mode<b>Learning</b></div>
-          <div>Load<b>Orbit</b></div>
+          <div>Load<b>Relay</b></div>
           <div>Trig<b>Curiosity</b></div>
         </div>
       </div>
@@ -462,14 +449,14 @@ footer { border-top: 1px solid var(--ink); }
           <div class="prose" data-rise>
             <p>I'm <strong>Teja Varma</strong>, a third-year <strong>Electronics and Communication Engineering</strong> student at <strong>Vishnu Institute of Technology</strong>.</p>
             <p>My foundation is signals, circuits and systems. My focus now is <strong>artificial intelligence</strong>: it is the fastest-growing field in technology, and its scope keeps getting wider.</p>
-            <p>I learn by building. While I study <strong>Python</strong> and <strong>machine-learning fundamentals</strong>, I'm also building <strong>Orbit</strong>, a desktop agent that carries out tasks from plain-English commands.</p>
+            <p>I learn by building. While I study <strong>Python</strong> and <strong>machine-learning fundamentals</strong>, I built <strong>Relay</strong>, a desktop agent that carries out tasks from voice or typed commands. It's installed on my laptop and I use it every day.</p>
             <p>I do my best work in a team. Hackathons and club work are where I get the most done.</p>
           </div>
           <div>
             <div class="label features-title">Features</div>
             <ul class="features" data-stagger>
               <li>Third-year B.Tech, Electronics &amp; Communication Engineering</li>
-              <li>Building Orbit, an AI desktop agent (Electron + OpenAI)</li>
+              <li>Built Relay, an AI desktop agent with voice (Electron + Gemini)</li>
               <li>Learning Python and machine-learning fundamentals</li>
               <li>Hackathon-tested: Smart India Hackathon, Hacker House Goa 2026</li>
               <li>Member of Mitra Club at Vishnu Institute of Technology</li>
@@ -484,57 +471,56 @@ footer { border-top: 1px solid var(--ink); }
             <div class="blk"><span class="label">Stage A · Foundation</span><h3>Electronics</h3><p>Signals, circuits, communication systems</p><span class="wire-pulse"></span></div>
             <div class="blk now"><span class="label">Stage B · Learning now</span><h3>Python</h3><p>The language of AI, and my main goal</p><span class="wire-pulse" style="--d:.6s"></span></div>
             <div class="blk now"><span class="label">Stage C · Learning now</span><h3>Machine learning</h3><p>Data, models, training basics</p><span class="wire-pulse" style="--d:1.2s"></span></div>
-            <div class="blk"><span class="label">Stage D · Building</span><h3>AI agents</h3><p>Orbit: commands in, actions out</p></div>
+            <div class="blk"><span class="label">Stage D · Shipped</span><h3>AI agents</h3><p>Relay: commands in, actions out</p></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 2 Orbit -->
-    <section class="sec" id="orbit">
-      <div class="sec-label"><span class="sec-num">2</span><span class="label">Application: Orbit</span></div>
+    <!-- 2 Relay -->
+    <section class="sec" id="relay">
+      <div class="sec-label"><span class="sec-num">2</span><span class="label">Application: Relay</span></div>
       <div class="sec-body">
-        <div class="status"><i></i>In development</div>
-        <h2 data-rise>Orbit. Tell your computer what to do, <span class="dim">in plain English.</span></h2>
-        <div class="orbit-grid">
-          <div data-rise>
-            <p class="prose">Orbit is an AI agent that runs as a desktop app. You type a command the way you'd say it. Orbit uses OpenAI's GPT to understand what you mean, works out the steps, and carries out the task on your computer.</p>
-            <table class="spec-table">
-              <tr><th>Platform</th><td>Desktop app, built with Electron</td></tr>
-              <tr><th>Language model</th><td>OpenAI GPT</td></tr>
-              <tr><th>Input</th><td>Natural-language commands</td></tr>
-              <tr><th>Output</th><td>Tasks carried out on the computer</td></tr>
-              <tr><th>Status</th><td>In development</td></tr>
-            </table>
-            <div class="cta" style="margin-top:1.8rem">
-              <a class="btn" href="https://github.com/tejavarma15" target="_blank" rel="noopener">Follow on GitHub <span class="arr">↗</span></a>
-            </div>
-          </div>
+        <div class="status"><i></i>v1.4 · installed and in daily use</div>
+        <h2 data-rise>Relay. Tell your computer what to do, <span class="dim">by voice or by typing.</span></h2>
 
+        <figure class="demo" data-rise style="margin:0">
+          <div class="demo-top"><span class="rec">Real screen recording</span><span>Windows 11 · 0:27</span></div>
+          <video id="demoVideo" poster="media/relay-demo-poster.jpg" muted loop playsinline preload="metadata" controls aria-label="Relay demo: opening WhatsApp, sorting the Downloads folder after approval, then undoing it">
+            <source src="media/relay-demo.mp4" type="video/mp4; codecs=avc1.640028" />
+            <source src="media/relay-demo.webm" type="video/webm; codecs=vp9" />
+          </video>
+          <div class="chapters" id="chapters">
+            <button type="button" data-t="0">0:00<b>Open WhatsApp</b></button>
+            <button type="button" data-t="13">0:13<b>Sort Downloads</b></button>
+            <button type="button" data-t="15">0:15<b>Approve the plan</b></button>
+            <button type="button" data-t="21">0:21<b>Undo it all</b></button>
+          </div>
+        </figure>
+        <p class="demo-note">Recorded on my laptop. Chat names and personal file names are blurred.</p>
+
+        <div class="relay-grid">
           <div data-rise>
-            <div class="app" id="app">
-              <div class="app-bar"><span class="dot"></span>orbit<span class="conn"><i></i>GPT connected</span></div>
-              <form class="cmd" id="cmdForm">
-                <label for="cmdIn">›</label>
-                <input id="cmdIn" autocomplete="off" placeholder="Tell Orbit what to do" />
-                <button type="submit">Run</button>
-              </form>
-              <div class="pipe" id="pipe">
-                <div class="pipe-line"><div class="pipe-fill" id="pipeFill"></div></div>
-                <div class="st"><i></i><span>Command</span></div>
-                <div class="st"><i></i><span>Understand</span></div>
-                <div class="st"><i></i><span>Plan</span></div>
-                <div class="st"><i></i><span>Execute</span></div>
-              </div>
-              <div class="log" id="log" aria-live="polite"></div>
-              <div class="examples" id="examples">
-                <button type="button">open youtube</button>
-                <button type="button">organize my downloads</button>
-                <button type="button">create a folder called projects</button>
-                <button type="button">who built you?</button>
-              </div>
-            </div>
-            <p class="note">Interactive simulation for this page. The real Orbit runs on the desktop.</p>
+            <p class="prose">Relay is an AI agent for Windows. Press <strong>Ctrl+Shift+M</strong> and say what you want, or type it. Gemini works out which actions to take, Relay shows you exactly what will change, and nothing touches your files until you approve it.</p>
+            <table class="spec-table">
+              <tr><th>Platform</th><td>Windows desktop app (Electron), one-click installer, runs in the tray and starts with Windows</td></tr>
+              <tr><th>AI</th><td>Google Gemini with tool calling, so any phrasing works instead of fixed commands</td></tr>
+              <tr><th>Voice</th><td>Speech transcribed by Gemini and shown for review before it runs</td></tr>
+              <tr><th>Safety</th><td>Approval before file changes, one-click Undo, Recycle Bin only, system folders blocked</td></tr>
+              <tr><th>Reliability</th><td>Retries and backup models when Gemini is busy; instant commands work offline</td></tr>
+              <tr><th>Tested</th><td>28 automated tests for tools, agent loop and history</td></tr>
+            </table>
+          </div>
+          <div data-rise>
+            <div class="label" style="margin-bottom:.6rem">What it does</div>
+            <ul class="caps">
+              <li><span>Apps &amp; web</span><span>Opens any installed app, including Store apps like WhatsApp, and brings it to the front. Opens sites and searches Google or YouTube.</span></li>
+              <li><span>Files</span><span>Creates, finds, moves and renames files. Sorts a messy folder into Images, PDFs, Videos and more.</span></li>
+              <li><span>Multi-step</span><span>"Make a folder called Hackathon, move my pitch PDFs into it and open it" in one sentence.</span></li>
+              <li><span>Questions</span><span>Answers questions like a chat assistant, with short spoken replies to voice commands.</span></li>
+              <li><span>Memory</span><span>Past conversations saved on the device; reopen one and carry on.</span></li>
+            </ul>
+            <p class="story"><strong>Version 2 of an idea.</strong> My first attempt, Orbit, misheard voice commands and only handled phrases I had hard-coded. I rebuilt it from scratch as Relay around tool calling, voice review and undo.</p>
           </div>
         </div>
       </div>
@@ -591,8 +577,8 @@ footer { border-top: 1px solid var(--ink); }
           </div>
           <div class="run">
             <span class="run-idx">T-04</span>
-            <div><h3>Orbit</h3><div class="role">Creator · ongoing</div></div>
-            <p class="what">First AI project: a desktop agent built with Electron and OpenAI.</p>
+            <div><h3>Relay</h3><div class="role">Creator · v1.4 shipped</div></div>
+            <p class="what">AI desktop agent with voice, tool calling and undo, rebuilt from my first attempt, Orbit.</p>
             <svg viewBox="0 0 120 26" aria-hidden="true"><path d="M0 22 H40 V4 H120" /></svg>
           </div>
         </div>
@@ -781,45 +767,26 @@ footer { border-top: 1px solid var(--ink); }
   requestAnimationFrame(frame);
   new MutationObserver(readColors).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
 
-  /* ---------- Orbit console simulation ---------- */
-  const log = $("#log"), stages = $$(".st"), fill = $("#pipeFill"), cmdIn = $("#cmdIn");
-  const scripts = {
-    "open youtube": [["Intent", "open a website"], ["Plan", "launch browser → go to youtube.com"], ["Execute", "browser opened at youtube.com"]],
-    "organize my downloads": [["Intent", "file management"], ["Plan", "scan ~/Downloads → group files by type"], ["Execute", "moved 42 files into Images/, Documents/, Archives/"]],
-    "create a folder called projects": [["Intent", "create a directory"], ["Plan", "mkdir ~/Desktop/projects"], ["Execute", "folder created on the Desktop"]],
-    "who built you?": [["Intent", "identity question"], ["Plan", "answer from memory"], ["Execute", "I'm Orbit, built by Teja Varma with Electron and OpenAI. Still in development."]],
-  };
-  let busy = false;
-  const add = (text, cls) => { const p = document.createElement("p"); p.className = cls || ""; p.textContent = text; log.appendChild(p); log.scrollTop = log.scrollHeight; return p; };
-  const setStage = i => { stages.forEach((s, j) => s.classList.toggle("on", j <= i)); fill.style.setProperty("--p", Math.max(0, i) / 3); };
-  function render(cmd, steps, instant) {
-    if (log.children.length) { const d = document.createElement("div"); d.className = "sep"; log.appendChild(d); }
-    add("› " + cmd, "u");
-    if (instant) { steps.forEach(([k, v], i) => add((k + ":").padEnd(9) + v, i === steps.length - 1 ? "d" : "s")); setStage(3); return; }
-    busy = true; setStage(0);
-    steps.forEach(([k, v], i) => setTimeout(() => {
-      add((k + ":").padEnd(9) + v, i === steps.length - 1 ? "d" : "s");
-      setStage(i + 1);
-      if (i === steps.length - 1) busy = false;
-    }, 650 * (i + 1)));
+  /* ---------- Relay demo video ---------- */
+  const video = $("#demoVideo"), chapterBtns = $$("#chapters button");
+  if (video) {
+    chapterBtns.forEach(b => b.addEventListener("click", () => { video.currentTime = +b.dataset.t; video.play().catch(() => {}); }));
+    video.addEventListener("timeupdate", () => {
+      let on = 0; chapterBtns.forEach((b, i) => { if (video.currentTime >= +b.dataset.t) on = i; });
+      chapterBtns.forEach((b, i) => b.classList.toggle("on", i === on));
+    });
+    // Play while on screen (muted); never autoplay when the viewer prefers reduced motion
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) video.play().catch(() => {}); else video.pause(); }), { threshold: .45 }).observe(video);
+    }
   }
-  function run(raw) {
-    const cmd = raw.trim(); if (!cmd || busy) return;
-    const steps = scripts[cmd.toLowerCase()] || [["Intent", "parsing \"" + cmd + "\" with GPT"], ["Plan", "break the request into system actions"], ["Execute", "runs in the desktop app. Ask Teja for a live demo."]];
-    render(cmd, steps, false);
-  }
-  render("open youtube", scripts["open youtube"], true);
-  $("#examples").addEventListener("click", e => { if (e.target.tagName === "BUTTON") run(e.target.textContent); });
-  $("#cmdForm").addEventListener("submit", e => { e.preventDefault(); run(cmdIn.value); cmdIn.value = ""; });
-  let autoRan = false;
-  new IntersectionObserver(es => { if (es[0].isIntersecting && !autoRan) { autoRan = true; setTimeout(() => run("organize my downloads"), 700); } }, { threshold: .6 }).observe($("#app"));
 
   /* ---------- Chip pinout ---------- */
   const pins = [
     [1, "PY", "Python", "I", "Learning now. My main goal: getting fluent in the language of AI."],
     [2, "ML", "Machine learning", "I", "Learning the fundamentals: data, models and training."],
-    [3, "ELN", "Electron", "I/O", "Used to build Orbit as a desktop app."],
-    [4, "GPT", "OpenAI API", "I/O", "Powers how Orbit understands natural-language commands."],
+    [3, "ELN", "Electron", "I/O", "Used to build Relay as a Windows desktop app."],
+    [4, "GEM", "Gemini API", "I/O", "Tool calling and voice transcription inside Relay."],
     [5, "GIT", "Git & GitHub", "I/O", "Version control. Projects live at github.com/tejavarma15."],
     [6, "ECE", "Electronics", "O", "Engineering foundation: signals, circuits and communication systems."],
     [7, "GND", "Cricket & movies", "PWR", "Keeps me grounded."],
