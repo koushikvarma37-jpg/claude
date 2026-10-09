@@ -31,7 +31,7 @@ Relay is named after the electronic relay, where a small signal switches a bigge
 - **Nothing is ever sent without you seeing it first.** Relay shows the exact message or email with **Send** and **Cancel**.
 - **WhatsApp** uses the WhatsApp Desktop app (install it from the Microsoft Store and log in once).
   - If Relay knows the person's number, it opens their chat with the message typed in.
-  - If it only knows a name, it searches your chats for that name.
+  - If it only knows a name, it finds WhatsApp's search box on screen, clicks it and searches your chats. It checks that the name really went into the search box before going on.
   - Before pressing Enter, Relay takes a screenshot and checks two things: that the right chat is open and that the message is in the box. If anything looks wrong, it stops and sends nothing.
   - Saving people's numbers ("Amma's number is …") makes sending faster and more reliable.
 - **Email:**
@@ -59,7 +59,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-2.0.0.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-2.0.1.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 

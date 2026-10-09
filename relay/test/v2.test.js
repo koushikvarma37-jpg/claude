@@ -32,7 +32,7 @@ function zip(files) {
 }
 const DOCX = (paras) => zip({ "word/document.xml": `<w:document><w:body>${paras.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("")}</w:body></w:document>` });
 
-function sandbox({ psReplies = {}, askReplies = [], emailAccount = null, waInstalled = true } = {}) {
+function sandbox({ psReplies = {}, askReplies = [], emailAccount = null, waInstalled = true, clipboard = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "relay2-"));
   const known = { home };
   for (const k of ["desktop", "downloads", "documents", "pictures", "music", "videos"]) {
@@ -63,7 +63,7 @@ function sandbox({ psReplies = {}, askReplies = [], emailAccount = null, waInsta
     trash: async () => {},
     captureScreen: async () => [{ png: Buffer.from("fakepng") }],
     ask: async (parts, opts) => { log.asked.push({ parts, opts }); const r = askReplies.shift(); if (r instanceof Error) throw r; return typeof r === "string" ? r : JSON.stringify(r || {}); },
-    clipboard: { read: () => log.clipboard, write: (t) => { log.clipboard = t; } },
+    clipboard: clipboard || { read: () => log.clipboard, write: (t) => { log.clipboard = t; } },
     sendMail: async (m) => { log.mails.push(m); },
     sleep: async () => {},
     now: () => new Date(),
@@ -268,25 +268,55 @@ test("WhatsApp: if the message never shows up in the box, nothing is sent", asyn
   assert.ok(!log.ps.some((e) => e.ACTION === "send"));
 });
 
-test("WhatsApp by name: searches the chat, pastes, checks, sends, and gives the clipboard back", async () => {
+const LIST = { whatsapp_visible: true, search_box: { x: 120, y: 180 }, search_text: null, open_chat_name: null, message_box_text: null };
+
+test("WhatsApp by name: clicks the search box, checks the name, opens the chat, checks again, sends, and gives the clipboard back", async () => {
   const { t, log } = sandbox({ askReplies: [
-    { whatsapp_visible: true, open_chat_name: "Ravi Kumar", message_box_text: null },
-    { whatsapp_visible: true, open_chat_name: "Ravi Kumar", message_box_text: "Bring the DSP record tomorrow" },
+    LIST,
+    { ...LIST, search_text: "Ravi" },
+    { ...LIST, search_text: "Ravi", open_chat_name: "Ravi Kumar", message_box_text: "Bring the DSP record tomorrow" },
   ] });
   const r = await t.send_whatsapp.run({ to: "Ravi", message: "Bring the DSP record tomorrow" });
   assert.equal(r.sent, true);
-  assert.deepEqual(log.ps.map((e) => e.ACTION), ["search", "paste", "send"]);
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["escape", "click", "type", "open", "paste", "send"]);
+  assert.deepEqual([log.ps[1].X, log.ps[1].Y], [120, 180]);
   await new Promise((res) => setTimeout(res, 350));
   assert.equal(log.clipboard, "user's clipboard");
 });
 
 test("WhatsApp by name: the wrong chat opening means nothing is sent", async () => {
-  const wrong = { whatsapp_visible: true, open_chat_name: "Ravindra", message_box_text: null };
-  const { t, log } = sandbox({ askReplies: [wrong, wrong] });
+  const wrong = { ...LIST, search_text: "Ravi", open_chat_name: "Ravindra", message_box_text: "hi" };
+  const { t, log } = sandbox({ askReplies: [LIST, { ...LIST, search_text: "Ravi" }, wrong, LIST, { ...LIST, search_text: "Ravi" }, wrong] });
   const r = await t.send_whatsapp.run({ to: "Ravi", message: "hi" });
   assert.equal(r.error, "chat_not_found");
-  assert.deepEqual(log.ps.map((e) => e.ACTION), ["search", "search"], "tried Enter, then Down+Enter, never pasted or sent");
-  assert.deepEqual(log.ps.map((e) => e.MODE), ["enter", "down"]);
+  assert.ok(!log.ps.some((e) => e.ACTION === "send"), "never sent");
+  assert.deepEqual(log.ps.filter((e) => e.ACTION === "open").map((e) => e.MODE), ["enter", "down"]);
+  assert.equal(log.ps.filter((e) => e.ACTION === "clear").length, 2, "removed the pasted text both times");
+});
+
+test("WhatsApp by name: if the name didn't reach the search box, Relay stops before pressing Enter", async () => {
+  const { t, log } = sandbox({ askReplies: [LIST, { ...LIST, search_text: null }] });
+  const r = await t.send_whatsapp.run({ to: "Teja Varma", message: "hi" });
+  assert.equal(r.error, "search_failed");
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["escape", "click", "type"]);
+});
+
+test("WhatsApp by name: no search box on screen, or a click outside WhatsApp, sends nothing", async () => {
+  const a = sandbox({ askReplies: [{ ...LIST, search_box: null }] });
+  assert.equal((await a.t.send_whatsapp.run({ to: "Ravi", message: "hi" })).error, "no_search_box");
+  const b = sandbox({ askReplies: [LIST], psReplies: (env) => (env.ACTION === "click" ? { status: "outside" } : { status: "ok" }) });
+  assert.equal((await b.t.send_whatsapp.run({ to: "Ravi", message: "hi" })).error, "no_search_box");
+  assert.ok(!b.log.ps.some((e) => ["type", "open", "send"].includes(e.ACTION)));
+});
+
+test("WhatsApp: a clipboard that can't be read or restored never crashes Relay", async () => {
+  const broken = { read: () => { throw new Error("clipboard busy"); }, write: () => { throw new TypeError("conversion failure"); } };
+  const sb = sandbox({ clipboard: broken, askReplies: [{ whatsapp_visible: true, open_chat_name: "Amma", message_box_text: "hello" }] });
+  const r = await sb.t.send_whatsapp.run({ to: "9876543210", message: "hello" });
+  assert.equal(r.sent, true);
+  const odd = sandbox({ clipboard: { read: () => undefined, write: () => { throw new TypeError("conversion failure"); } }, askReplies: [{ whatsapp_visible: true, open_chat_name: "Amma", message_box_text: "hello" }] });
+  assert.equal((await odd.t.send_whatsapp.run({ to: "9876543210", message: "hello" })).sent, true);
+  await new Promise((res) => setTimeout(res, 350)); // the restore timer runs without throwing
 });
 
 test("WhatsApp: Relay refuses to type when it can't bring WhatsApp to the front", async () => {

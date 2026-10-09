@@ -26,6 +26,10 @@ const pendingConfirms = new Map();
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// A slip in a background task (a timer, a reminder) must never pop up a crash dialog or take Relay down.
+process.on("uncaughtException", (err) => console.error("Relay background error:", err));
+process.on("unhandledRejection", (err) => console.error("Relay background error:", err));
+
 function send(ev) { if (win && !win.isDestroyed()) win.webContents.send("relay:event", ev); }
 
 function getClient() {
@@ -139,16 +143,19 @@ function refreshTrayMenu() {
 
 // ---------- Screen capture (screenshots, "what's on my screen", checking WhatsApp before sending) ----------
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-async function captureScreen({ hideRelay = false, maxWidth = 0 } = {}) {
+async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false } = {}) {
   const hide = hideRelay && win && win.isVisible() && !win.isMinimized();
   if (hide) { win.hide(); await wait(350); } // let the window fade out first
   try {
     const displays = screen.getAllDisplays();
-    const biggest = displays.reduce((a, d) => (d.size.width * d.scaleFactor > a.size.width * a.scaleFactor ? d : a), displays[0]);
+    const main = screen.getPrimaryDisplay();
+    const biggest = primary ? main : displays.reduce((a, d) => (d.size.width * d.scaleFactor > a.size.width * a.scaleFactor ? d : a), displays[0]);
     let w = Math.round(biggest.size.width * biggest.scaleFactor), h = Math.round(biggest.size.height * biggest.scaleFactor);
     if (maxWidth && w > maxWidth) { h = Math.round((h * maxWidth) / w); w = maxWidth; }
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: w, height: h } });
-    return sources.filter((s) => !s.thumbnail.isEmpty()).map((s) => ({ png: s.thumbnail.toPNG() }));
+    let list = sources.filter((s) => !s.thumbnail.isEmpty());
+    if (primary) list = list.filter((s) => s.display_id === String(main.id)).concat(list).slice(0, 1); // only the main screen (falls back to the first)
+    return list.map((s) => ({ png: s.thumbnail.toPNG() }));
   } finally {
     if (hide) win.show();
   }

@@ -3,7 +3,8 @@
 // WhatsApp (Desktop app):
 //   • If Relay knows the person's number, it opens the chat with the message already typed
 //     (whatsapp://send?phone=…&text=…), checks the screen, and presses Enter.
-//   • If it only knows a name, it searches WhatsApp's chat list for that name, opens the chat and pastes the message.
+//   • If it only knows a name, it finds WhatsApp's search box on screen, clicks it, searches for the name,
+//     opens the chat and pastes the message.
 //   Before pressing Enter, Relay takes a screenshot and asks Gemini which chat is open and what's in the message box.
 //   It only sends if both are right. It never types into a window that isn't WhatsApp.
 //
@@ -16,6 +17,7 @@ const { normalizePhone, isEmail } = require("./memory");
 // One script, several small actions (RELAY_ACTION). Each action first finds WhatsApp's window and brings it to
 // the front, and refuses to press any key unless WhatsApp really is the window in front.
 const WA_PS = NATIVE + String.raw`
+[RelayWin]::SetProcessDPIAware() | Out-Null   # real pixels, so clicks land where the screenshot shows things
 Add-Type -AssemblyName System.Windows.Forms
 function Find-WA { Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like '*WhatsApp*' -or $_.MainWindowTitle -like '*WhatsApp*') } | Select-Object -First 1 }
 function Reply($o) { $o | ConvertTo-Json -Compress; exit }
@@ -29,19 +31,22 @@ if ($action -eq 'open_uri') {
 }
 $p = Find-WA
 if (-not $p) { Reply @{ status = 'not_running' } }
-if (-not [RelayWin]::Focus($p.MainWindowHandle)) { Start-Sleep -Milliseconds 300; if (-not [RelayWin]::Focus($p.MainWindowHandle)) { Reply @{ status = 'not_focused' } } }
-function Keys($k) { if ([RelayWin]::GetForegroundWindow() -ne $p.MainWindowHandle) { Reply @{ status = 'not_focused' } }; [System.Windows.Forms.SendKeys]::SendWait($k) }
+$h = $p.MainWindowHandle
+if (-not [RelayWin]::Focus($h)) { Start-Sleep -Milliseconds 300; if (-not [RelayWin]::Focus($h)) { Reply @{ status = 'not_focused' } } }
+function Front { if ([RelayWin]::GetForegroundWindow() -ne $h) { Reply @{ status = 'not_focused' } } }
+function Keys($k) { Front; [System.Windows.Forms.SendKeys]::SendWait($k) }
 switch ($action) {
-  'open_uri' { }
-  'focus' { }
-  'search' {
-    Keys '{ESC}'; Start-Sleep -Milliseconds 250
-    Keys '^f'; Start-Sleep -Milliseconds 500
-    Set-Clipboard -Value $env:RELAY_TEXT
-    Keys '^a'; Keys '^v'; Start-Sleep -Milliseconds 1600
-    if ($env:RELAY_MODE -eq 'down') { Keys '{DOWN}'; Start-Sleep -Milliseconds 300 }
-    Keys '{ENTER}'; Start-Sleep -Milliseconds 1300
+  'escape' { Keys '{ESC}'; Start-Sleep -Milliseconds 300; Keys '{ESC}'; Start-Sleep -Milliseconds 300 }
+  'click' {
+    # X, Y: 0-1000 across the main screen (as Gemini reads the screenshot). Only clicks inside WhatsApp's window.
+    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $x = $b.X + [int]($b.Width * [double]$env:RELAY_X / 1000); $y = $b.Y + [int]($b.Height * [double]$env:RELAY_Y / 1000)
+    $r = New-Object RelayWin+RECT; [RelayWin]::GetWindowRect($h, [ref]$r) | Out-Null
+    if ($x -lt $r.Left -or $x -gt $r.Right -or $y -lt $r.Top -or $y -gt $r.Bottom) { Reply @{ status = 'outside' } }
+    Front; [RelayWin]::Click($x, $y); Start-Sleep -Milliseconds 400
   }
+  'type' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '^v'; Start-Sleep -Milliseconds 1500 }
+  'open' { if ($env:RELAY_MODE -eq 'down') { Keys '{DOWN}'; Start-Sleep -Milliseconds 300 }; Keys '{ENTER}'; Start-Sleep -Milliseconds 1500 }
   'paste' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^v'; Start-Sleep -Milliseconds 500 }
   'clear' { Keys '^a'; Keys '{DELETE}'; Start-Sleep -Milliseconds 200 }
   'send' { Keys '{ENTER}'; Start-Sleep -Milliseconds 700 }
@@ -77,16 +82,22 @@ function createMessaging(ctx) {
     const r = await ctx.ps.run(WA_PS, { ACTION: action, ...env }, { timeout: 40000 });
     if (r.status === "not_running") throw new Error("WhatsApp didn't open. Open it once and make sure you're logged in, then ask again.");
     if (r.status === "not_focused") throw new Error("Windows didn't let Relay bring WhatsApp to the front, so nothing was sent. Click on WhatsApp once and try again.");
-    if (r.status !== "ok") throw new Error(`WhatsApp automation failed: ${r.error || r.status}`);
+    if (r.status !== "ok" && r.status !== "outside") throw new Error(`WhatsApp automation failed: ${r.error || r.status}`);
     return r;
   }
 
-  /** Ask Gemini what WhatsApp is showing right now. */
+  /** Ask Gemini what WhatsApp is showing right now (on the main screen, so click positions line up). */
   async function readWhatsApp() {
-    const shots = await ctx.captureScreen({ hideRelay: false, maxWidth: 1920 });
+    const shots = await ctx.captureScreen({ hideRelay: false, primary: true, maxWidth: 1920 });
     if (!shots.length) throw new Error("Couldn't capture the screen to check WhatsApp.");
-    const parts = shots.map((s) => ({ inlineData: { mimeType: "image/png", data: s.png.toString("base64") } }));
-    parts.push({ text: 'Look at the WhatsApp window in this screenshot. Reply with JSON only: {"whatsapp_visible": boolean, "open_chat_name": string or null (the name or number at the top of the open chat), "message_box_text": string or null (text typed in the message box at the bottom, not yet sent), "popup": string or null (any dialog or error shown, e.g. "Phone number shared via url is invalid")}' });
+    const parts = [{ inlineData: { mimeType: "image/png", data: shots[0].png.toString("base64") } }];
+    parts.push({ text: 'Look at the WhatsApp window in this screenshot. Reply with JSON only:\n' +
+      '{"whatsapp_visible": boolean,\n' +
+      ' "search_box": {"x": number, "y": number} or null  (centre of the chat-list search field, e.g. "Search or start a new chat", as 0-1000 fractions of the screenshot width and height),\n' +
+      ' "search_text": string or null  (text typed in that search field),\n' +
+      ' "open_chat_name": string or null  (name or number in the header of the chat that is open on the right; null if no chat is open),\n' +
+      ' "message_box_text": string or null  (text typed in the message box at the bottom of the open chat, not yet sent),\n' +
+      ' "popup": string or null  (any dialog or error shown)}' });
     const raw = await ctx.ask(parts, { json: true });
     try { return JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, "").trim()); } catch { return { whatsapp_visible: false }; }
   }
@@ -116,7 +127,8 @@ function createMessaging(ctx) {
       return { summary: `Opened the message to ${who.label} in WhatsApp Web. Press Enter there to send it`, sent: false };
     }
 
-    const saved = ctx.clipboard ? ctx.clipboard.read() : null; // the message goes through the clipboard; put the user's back afterwards
+    let saved = null; // the message goes through the clipboard; put the user's back afterwards
+    try { saved = ctx.clipboard ? ctx.clipboard.read() : null; } catch {}
     try {
       if (who.phone) {
         await wa("open_uri", { URI: `whatsapp://send?phone=${who.phone}&text=${encodeURIComponent(text)}`, WAIT: 2500 });
@@ -137,30 +149,42 @@ function createMessaging(ctx) {
         return { summary: `Sent to ${who.label} on WhatsApp`, sent: true };
       }
 
-      // Only a name: search for the chat. "Enter" opens the top result in most versions; others need "Down" first.
+      // Only a name: find WhatsApp's search box on screen, click it, type the name and check it's really there,
+      // open the chat ("Enter" opens the top result in most versions; others need "Down" first), paste the message,
+      // and send only if the right chat is open with the right text. Keyboard shortcuts differ between WhatsApp
+      // versions, so Relay doesn't rely on them.
       const opened = await ctx.apps.launch("WhatsApp");
       if (!opened.ok || opened.warning) throw new Error("WhatsApp didn't open. Open it once and make sure you're logged in, then ask again.");
       await wait(1200);
       for (const mode of ["enter", "down"]) {
-        await wa("search", { TEXT: who.searchName, MODE: mode });
+        await wa("escape");                                      // close any open chat so nothing gets typed into it
         let seen = await readWhatsApp();
-        if (!seen.whatsapp_visible || !nameMatches(who.searchName, seen.open_chat_name)) {
-          if (mode === "down") return { summary: `Couldn't find a chat called "${who.searchName}" in WhatsApp, so nothing was sent`, error: "chat_not_found", opened_chat: seen.open_chat_name || null, tip: "Tell me their number and I'll save it for next time." };
-          continue;
+        if (!seen.whatsapp_visible) return { summary: "I couldn't see WhatsApp on the main screen, so nothing was sent", error: "not_visible", tip: "Keep WhatsApp on your main screen and make sure it's logged in." };
+        const box = seen.search_box;
+        if (!box || !Number.isFinite(+box.x) || !Number.isFinite(+box.y)) return { summary: "I couldn't find WhatsApp's search box, so nothing was sent", error: "no_search_box", tip: "Tell me their number and I'll save it; sending by number is more reliable." };
+        const clicked = await wa("click", { X: Math.round(+box.x), Y: Math.round(+box.y) });
+        if (clicked.status === "outside") return { summary: "WhatsApp's search box wasn't where I expected, so nothing was sent", error: "no_search_box" };
+        await wa("type", { TEXT: who.searchName });
+        seen = await readWhatsApp();
+        if (!nameMatches(who.searchName, seen.search_text) && !norm(seen.search_text).includes(norm(who.searchName))) {
+          if (seen.open_chat_name && seen.message_box_text) await wa("clear");   // the name landed in a message box: remove it
+          return { summary: "I couldn't type into WhatsApp's search box, so nothing was sent", error: "search_failed", tip: "Tell me their number and I'll save it; sending by number is more reliable." };
         }
-        if (seen.message_box_text) { await wa("clear"); }       // don't send someone's half-written draft along with it
+        await wa("open", { MODE: mode });
         await wa("paste", { TEXT: text });
         seen = await readWhatsApp();
-        if (!nameMatches(who.searchName, seen.open_chat_name) || !textMatches(text, seen.message_box_text)) {
-          await wa("clear");
-          return { summary: "Something didn't look right in WhatsApp, so I didn't send the message", error: "not_verified", sent: false };
+        const rightChat = nameMatches(who.searchName, seen.open_chat_name), rightText = textMatches(text, seen.message_box_text);
+        if (rightChat && rightText) {
+          await wa("send");
+          return { summary: `Sent to ${seen.open_chat_name} on WhatsApp`, sent: true };
         }
-        await wa("send");
-        return { summary: `Sent to ${seen.open_chat_name} on WhatsApp`, sent: true };
+        await wa("clear");                                       // remove what we pasted, wherever it went
+        if (rightChat) return { summary: "Something didn't look right in WhatsApp, so I didn't send the message", error: "not_verified", sent: false };
+        if (mode === "down") return { summary: `Couldn't find a chat called "${who.searchName}" in WhatsApp, so nothing was sent`, error: "chat_not_found", opened_chat: seen.open_chat_name || null, tip: "Tell me their number and I'll save it for next time." };
       }
       return { summary: "Couldn't open the chat, so nothing was sent", error: "chat_not_found" };
     } finally {
-      if (ctx.clipboard && saved != null) setTimeout(() => ctx.clipboard.write(saved), 300);
+      if (ctx.clipboard && typeof saved === "string") setTimeout(() => { try { ctx.clipboard.write(saved); } catch {} }, 300);
     }
   }
 
