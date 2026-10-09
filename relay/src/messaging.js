@@ -31,11 +31,19 @@ if ($action -eq 'open_uri') {
 }
 $all = Find-WA
 if ($all.Length -eq 0) { Reply @{ status = 'not_running' } }
-function IsWA($x) { foreach ($w in $all) { if ($w -eq $x) { return $true } }; return $false }
-# bring WhatsApp to the front: any of its windows being in front counts
-$h = $all[0]
-foreach ($w in $all) { [RelayWin]::Focus($w) | Out-Null; if (IsWA ([RelayWin]::GetForegroundWindow())) { $h = $w; break } }
-if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Start-Sleep -Milliseconds 300; [RelayWin]::Focus($h) | Out-Null }
+# WhatsApp is "in front" when the front window belongs to one of WhatsApp's processes (it has several windows)
+$pids = @($all | ForEach-Object { [RelayWin]::PidOf($_) })
+function IsWA($x) {
+  if ($x -eq [IntPtr]::Zero) { return $false }
+  foreach ($w in $all) { if ($w -eq $x) { return $true } }
+  $root = [RelayWin]::GetAncestor($x, 3)
+  return ($pids -contains [RelayWin]::PidOf($x)) -or ($pids -contains [RelayWin]::PidOf($root))
+}
+# already in front (e.g. it just opened the chat)? leave it alone, so the cursor stays in the message box
+if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) {
+  foreach ($w in $all) { [RelayWin]::ForceFocus($w) | Out-Null; if (IsWA ([RelayWin]::GetForegroundWindow())) { break } }
+}
+if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Start-Sleep -Milliseconds 400; [RelayWin]::ForceFocus($all[0]) | Out-Null }
 if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Reply @{ status = 'not_focused' } }
 function Front { if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Reply @{ status = 'not_focused' } } }
 function Keys($k) { Front; [System.Windows.Forms.SendKeys]::SendWait($k) }

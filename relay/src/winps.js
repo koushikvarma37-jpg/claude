@@ -25,6 +25,22 @@ public static class RelayWin {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  public static uint PidOf(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
+  // Bring a window to the front even when Windows' focus rules resist (borrow the current front window's input queue)
+  public static bool ForceFocus(IntPtr h) {
+    if (IsIconic(h)) ShowWindow(h, 9);
+    IntPtr fg = GetForegroundWindow(); uint ignore;
+    uint fgThread = GetWindowThreadProcessId(fg, out ignore), me = GetCurrentThreadId();
+    bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+    Key(0x12); BringWindowToTop(h); SetForegroundWindow(h);
+    if (attached) AttachThreadInput(me, fgThread, false);
+    System.Threading.Thread.Sleep(200);
+    return GetForegroundWindow() == h;
+  }
   // Every visible WhatsApp window: titled "WhatsApp" or "(3) WhatsApp" (unread count), never a browser tab.
   // The new app has two: the outer frame (WhatsApp.Root) and the page inside it (msedgewebview2); the page comes first.
   public static IntPtr[] FindWhatsApp() {
