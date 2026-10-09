@@ -18,6 +18,18 @@ function normalizePhone(raw) {
   else if (d.length === 10) d = "91" + d;
   return d;
 }
+/** Why a phone number can't be right, or null if it looks fine. Catches a missing or extra digit before anything is sent. */
+function phoneProblem(raw) {
+  const s = String(raw || "").trim();
+  const d = s.replace(/\D/g, "");
+  if (s.startsWith("+") || d.startsWith("00")) {
+    const full = d.replace(/^00/, "");
+    if (full.startsWith("91") && full.length !== 12) return `"${s}" has ${full.length - 2} digits after +91. Indian mobile numbers have 10.`;
+    return full.length >= 8 && full.length <= 15 ? null : `"${s}" doesn't look like a phone number.`;
+  }
+  if (d.length === 10 || (d.length === 11 && d.startsWith("0")) || (d.length === 12 && d.startsWith("91"))) return null;
+  return `"${s}" has ${d.length} digits. Indian mobile numbers have 10 (for other countries, start with + and the country code).`;
+}
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 
 function createMemory({ dir, now = () => Date.now() }) {
@@ -63,8 +75,9 @@ function createMemory({ dir, now = () => Date.now() }) {
   function saveContact({ name, phone, email, aliases }) {
     const n = String(name || "").trim();
     if (!n) throw new Error("A contact needs a name.");
+    const problem = phone ? phoneProblem(phone) : null;
+    if (problem) throw new Error(problem);
     const p = phone ? normalizePhone(phone) : "";
-    if (phone && (p.length < 8 || p.length > 15)) throw new Error(`"${phone}" doesn't look like a phone number.`);
     if (email && !isEmail(email)) throw new Error(`"${email}" doesn't look like an email address.`);
     let c = data.contacts.find((x) => norm(x.name) === norm(n));
     const created = !c;
@@ -226,4 +239,4 @@ function createMemoryTools({ memory, now: clock }) {
   };
 }
 
-module.exports = { createMemory, createMemoryTools, normalizePhone, isEmail, parseWhen };
+module.exports = { createMemory, createMemoryTools, normalizePhone, phoneProblem, isEmail, parseWhen };

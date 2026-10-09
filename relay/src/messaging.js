@@ -12,7 +12,7 @@
 //   • With a Gmail address + app password saved in Settings, Relay sends the email itself (SMTP).
 //   • Otherwise it opens the email, fully written, in Gmail in the browser; the user presses Send.
 const { NATIVE } = require("./winps");
-const { normalizePhone, isEmail } = require("./memory");
+const { normalizePhone, phoneProblem, isEmail } = require("./memory");
 const { ACTIVE_WINDOW_PS } = require("./system");
 
 // One script, several small actions (RELAY_ACTION). Each action first finds WhatsApp's window and brings it to
@@ -20,19 +20,24 @@ const { ACTIVE_WINDOW_PS } = require("./system");
 const WA_PS = NATIVE + String.raw`
 [RelayWin]::SetProcessDPIAware() | Out-Null   # real pixels, so clicks land where the screenshot shows things
 Add-Type -AssemblyName System.Windows.Forms
-function Find-WA { Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like '*WhatsApp*' -or $_.MainWindowTitle -like '*WhatsApp*') } | Select-Object -First 1 }
+function Find-WA {
+  # by exact window title first (the Store app's window can belong to a host process), then by process name
+  foreach ($t in @('WhatsApp', 'WhatsApp Beta')) { $w = [RelayWin]::FindTitled($t); if ($w -ne [IntPtr]::Zero) { return $w } }
+  $q = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -like '*WhatsApp*' } | Select-Object -First 1
+  if ($q) { return $q.MainWindowHandle }
+  return [IntPtr]::Zero
+}
 function Reply($o) { $o | ConvertTo-Json -Compress; exit }
 $action = $env:RELAY_ACTION
 if ($action -eq 'open_uri') {
   Start-Process $env:RELAY_URI
-  $deadline = (Get-Date).AddSeconds(15); $p = $null
-  while ((Get-Date) -lt $deadline) { $p = Find-WA; if ($p) { break }; Start-Sleep -Milliseconds 400 }
-  if (-not $p) { Reply @{ status = 'not_running' } }
+  $deadline = (Get-Date).AddSeconds(25); $w = [IntPtr]::Zero   # WhatsApp can take a while to start cold
+  while ((Get-Date) -lt $deadline) { $w = Find-WA; if ($w -ne [IntPtr]::Zero) { break }; Start-Sleep -Milliseconds 400 }
+  if ($w -eq [IntPtr]::Zero) { Reply @{ status = 'not_running' } }
   Start-Sleep -Milliseconds ([int]$env:RELAY_WAIT)
 }
-$p = Find-WA
-if (-not $p) { Reply @{ status = 'not_running' } }
-$h = $p.MainWindowHandle
+$h = Find-WA
+if ($h -eq [IntPtr]::Zero) { Reply @{ status = 'not_running' } }
 if (-not [RelayWin]::Focus($h)) { Start-Sleep -Milliseconds 300; if (-not [RelayWin]::Focus($h)) { Reply @{ status = 'not_focused' } } }
 function Front { if ([RelayWin]::GetForegroundWindow() -ne $h) { Reply @{ status = 'not_focused' } } }
 function Keys($k) { Front; [System.Windows.Forms.SendKeys]::SendWait($k) }
@@ -52,7 +57,7 @@ switch ($action) {
   'clear' { Keys '^a'; Keys '{DELETE}'; Start-Sleep -Milliseconds 200 }
   'send' { Keys '{ENTER}'; Start-Sleep -Milliseconds 700 }
 }
-Reply @{ status = 'ok'; title = $p.MainWindowTitle }
+Reply @{ status = 'ok' }
 `;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -94,7 +99,8 @@ function createMessaging(ctx) {
     const parts = [{ inlineData: { mimeType: "image/png", data: shots[0].png.toString("base64") } }];
     parts.push({ text: 'Look at the WhatsApp window in this screenshot. Reply with JSON only:\n' +
       '{"whatsapp_visible": boolean,\n' +
-      ' "search_box": {"x": number, "y": number} or null  (centre of the chat-list search field, e.g. "Search or start a new chat", as 0-1000 fractions of the screenshot width and height),\n' +
+      ' "search_box": [ymin, xmin, ymax, xmax] or null  (box_2d of the chat-list search field, e.g. "Search or start a new chat", normalised 0-1000),\n' +
+      ' "message_box": [ymin, xmin, ymax, xmax] or null  (box_2d of the "Type a message" field at the bottom of the open chat, normalised 0-1000),\n' +
       ' "search_text": string or null  (text typed in that search field),\n' +
       ' "open_chat_name": string or null  (name or number in the header of the chat that is open on the right; null if no chat is open),\n' +
       ' "message_box_text": string or null  (text typed in the message box at the bottom of the open chat, not yet sent),\n' +
@@ -103,12 +109,23 @@ function createMessaging(ctx) {
     try { return JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, "").trim()); } catch { return { whatsapp_visible: false }; }
   }
 
+  /** Centre of a box Gemini gave, as 0-1000 screen fractions: [ymin, xmin, ymax, xmax], or {x, y}. */
+  function centre(b) {
+    if (Array.isArray(b) && b.length === 4 && b.every((n) => Number.isFinite(+n))) return { x: Math.round((+b[1] + +b[3]) / 2), y: Math.round((+b[0] + +b[2]) / 2) };
+    if (b && Number.isFinite(+b.x) && Number.isFinite(+b.y)) return { x: Math.round(+b.x), y: Math.round(+b.y) };
+    return null;
+  }
+
   /** Works out who to message: a number, or a saved contact, or (if WhatsApp is installed) a name to search for. */
   function resolveRecipient(to) {
     const raw = String(to || "").trim();
     if (!raw) throw new Error("Who should I send it to?");
     const digits = raw.replace(/[\s\-()]/g, "");
-    if (/^\+?\d{8,15}$/.test(digits)) return { label: raw, phone: normalizePhone(raw) };
+    if (/^\+?\d{6,16}$/.test(digits)) {
+      const problem = phoneProblem(raw);
+      if (problem) throw new Error(`${problem} Check the number and try again.`);
+      return { label: raw, phone: normalizePhone(raw) };
+    }
     const found = ctx.memory.findContacts(raw);
     if (found.length > 1) return { ambiguous: found.slice(0, 5).map((c) => c.name) };
     if (found.length === 1) return { label: found[0].name, phone: found[0].phone || null, searchName: found[0].name };
@@ -145,7 +162,20 @@ function createMessaging(ctx) {
           await wa("send");
           return { summary: `Sent to ${who.label} on WhatsApp`, sent: true, note: "Couldn't double-check the screen, so have a quick look in WhatsApp." };
         }
-        if (!seen || !textMatches(text, seen.message_box_text)) return { summary: "WhatsApp opened the chat, but the message didn't appear in the box, so I didn't send anything", error: "not_verified", sent: false };
+        if (!seen || !textMatches(text, seen.message_box_text)) {
+          // The chat opened but WhatsApp didn't fill in the text: click the message box and paste it, then check again.
+          const box = seen && seen.whatsapp_visible ? centre(seen.message_box) : null;
+          if (box && !seen.message_box_text) {
+            const clicked = await wa("click", { X: box.x, Y: box.y });
+            if (clicked.status !== "outside") {
+              await wa("paste", { TEXT: text });
+              seen = await readWhatsApp().catch(() => null);
+              if (seen && textMatches(text, seen.message_box_text)) { await wa("send"); return { summary: `Sent to ${who.label} on WhatsApp`, sent: true }; }
+              if (seen && seen.message_box_text) await wa("clear");
+            }
+          }
+          return { summary: "WhatsApp opened the chat, but I couldn't get the message into the box, so I didn't send anything", error: "not_verified", sent: false, tip: "The chat is open in WhatsApp; you can type it there yourself." };
+        }
         await wa("send");
         return { summary: `Sent to ${who.label} on WhatsApp`, sent: true };
       }
@@ -161,8 +191,8 @@ function createMessaging(ctx) {
         await wa("escape");                                      // close any open chat so nothing gets typed into it
         let seen = await readWhatsApp();
         if (!seen.whatsapp_visible) return { summary: "I couldn't see WhatsApp on the main screen, so nothing was sent", error: "not_visible", tip: "Keep WhatsApp on your main screen and make sure it's logged in." };
-        const box = seen.search_box;
-        if (!box || !Number.isFinite(+box.x) || !Number.isFinite(+box.y)) return { summary: "I couldn't find WhatsApp's search box, so nothing was sent", error: "no_search_box", tip: "Tell me their number and I'll save it; sending by number is more reliable." };
+        const box = centre(seen.search_box);
+        if (!box) return { summary: "I couldn't find WhatsApp's search box, so nothing was sent", error: "no_search_box", tip: "Tell me their number and I'll save it; sending by number is more reliable." };
         const clicked = await wa("click", { X: Math.round(+box.x), Y: Math.round(+box.y) });
         if (clicked.status === "outside") return { summary: "WhatsApp's search box wasn't where I expected, so nothing was sent", error: "no_search_box" };
         await wa("type", { TEXT: who.searchName });

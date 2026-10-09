@@ -20,6 +20,21 @@ public static class RelayWin {
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int x, int y, uint d, UIntPtr e);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  // A visible top-level window whose title is exactly this (e.g. "WhatsApp"); works for Store apps hosted by other processes
+  public static IntPtr FindTitled(string title) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows(delegate(IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h)) return true;
+      var sb = new System.Text.StringBuilder(256); GetWindowText(h, sb, 256);
+      if (string.Equals(sb.ToString().Trim(), title, StringComparison.OrdinalIgnoreCase)) { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
   public static void Click(int x, int y) { SetCursorPos(x, y); System.Threading.Thread.Sleep(60); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
   public static void Key(byte k) { keybd_event(k, 0, 0, UIntPtr.Zero); keybd_event(k, 0, 2, UIntPtr.Zero); }
   public static bool Focus(IntPtr h) {

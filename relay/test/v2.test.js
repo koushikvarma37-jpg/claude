@@ -97,7 +97,7 @@ test("memory: facts, contacts and forgetting are saved to disk", () => {
   assert.match(again.promptBlock(), /Amma · WhatsApp \+919876543210 · amma@example\.com/);
   assert.equal(again.remove("dsp lab").length, 1);
   assert.equal(again.list().facts.length, 0);
-  assert.throws(() => again.saveContact({ name: "X", phone: "12" }), /phone number/);
+  assert.throws(() => again.saveContact({ name: "X", phone: "12" }), /2 digits/);
   assert.throws(() => again.saveContact({ name: "X", email: "not-an-email" }), /email/);
 });
 
@@ -321,6 +321,30 @@ test("WhatsApp: a clipboard that can't be read or restored never crashes Relay",
   const odd = sandbox({ clipboard: { read: () => undefined, write: () => { throw new TypeError("conversion failure"); } }, askReplies: [{ whatsapp_visible: true, open_chat_name: "Amma", message_box_text: "hello" }] });
   assert.equal((await odd.t.send_whatsapp.run({ to: "9876543210", message: "hello" })).sent, true);
   await new Promise((res) => setTimeout(res, 350)); // the restore timer runs without throwing
+});
+
+test("WhatsApp: a number with a missing digit is caught before anything happens", async () => {
+  const { t, memory, log } = sandbox();
+  await assert.rejects(t.send_whatsapp.plan({ to: "738344556", message: "hi" }), /9 digits\. Indian mobile numbers have 10/);
+  assert.throws(() => memory.saveContact({ name: "Teja Varma", phone: "738344556" }), /9 digits/);
+  assert.equal(log.ps.length, 0);
+  assert.equal((await t.send_whatsapp.plan({ to: "7383444556", message: "hi" })).title, "Send on WhatsApp to 7383444556 (+917383444556)?");
+});
+
+test("WhatsApp by number: if WhatsApp doesn't fill in the text, Relay clicks the message box, pastes, checks, sends", async () => {
+  const opened = { whatsapp_visible: true, open_chat_name: "Teja Varma (You)", message_box_text: null, message_box: [930, 400, 960, 900] };
+  const { t, log } = sandbox({ askReplies: [opened, opened, opened, { ...opened, message_box_text: "hi" }] });
+  const r = await t.send_whatsapp.run({ to: "7383444556", message: "hi" });
+  assert.equal(r.sent, true);
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["open_uri", "click", "paste", "send"]);
+  assert.deepEqual([log.ps[1].X, log.ps[1].Y], [650, 945], "centre of Gemini's [ymin, xmin, ymax, xmax] box");
+});
+
+test("WhatsApp by name: the search box can be given as Gemini's box_2d", async () => {
+  const list = { whatsapp_visible: true, search_box: [170, 100, 210, 400] };
+  const { t, log } = sandbox({ askReplies: [list, { ...list, search_text: "Ravi" }, { ...list, open_chat_name: "Ravi", message_box_text: "hi" }] });
+  assert.equal((await t.send_whatsapp.run({ to: "Ravi", message: "hi" })).sent, true);
+  assert.deepEqual([log.ps[1].X, log.ps[1].Y], [250, 190]);
 });
 
 test("WhatsApp: Relay refuses to type when it can't bring WhatsApp to the front", async () => {
