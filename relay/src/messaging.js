@@ -13,6 +13,7 @@
 //   • Otherwise it opens the email, fully written, in Gmail in the browser; the user presses Send.
 const { NATIVE } = require("./winps");
 const { normalizePhone, isEmail } = require("./memory");
+const { ACTIVE_WINDOW_PS } = require("./system");
 
 // One script, several small actions (RELAY_ACTION). Each action first finds WhatsApp's window and brings it to
 // the front, and refuses to press any key unless WhatsApp really is the window in front.
@@ -209,6 +210,18 @@ function createMessaging(ctx) {
     return { mode: "gmail", from: wanted || (ctx.settings.get && ctx.settings.get("emailAddress")) || "" };
   }
 
+  /** The account in the Gmail window that just opened, read from its title; null if it can't be seen. */
+  async function gmailAccountShown() {
+    for (let i = 0; i < 8; i++) {
+      await wait(1000);
+      const r = await ctx.ps.run(ACTIVE_WINDOW_PS, {}, { timeout: 8000 }).catch(() => null);
+      const title = (r && r.title) || "";
+      const m = /gmail/i.test(title) && title.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/);
+      if (m) return m[0];
+    }
+    return null;
+  }
+
   async function sendEmail({ to, subject, body, cc, from }) {
     const who = resolveEmail(to);
     if (who.ambiguous) return { summary: `More than one contact matches "${to}"`, error: "ambiguous", matches: who.ambiguous };
@@ -231,6 +244,18 @@ function createMessaging(ctx) {
     const params = new URLSearchParams({ ...(route.from ? { authuser: route.from } : {}), view: "cm", fs: "1", to: who.email, su: String(subject || ""), body: String(body || "") });
     if (ccList.length) params.set("cc", ccList.join(","));
     await ctx.openExternal(`https://mail.google.com/mail/?${params.toString()}`);
+    // Gmail quietly falls back to another account when the one asked for isn't signed in to this browser.
+    // Its tab title shows the account ("Compose Mail - x@gmail.com - Gmail"), so check it before the user presses Send.
+    if (route.from && ctx.ps) {
+      const shown = await gmailAccountShown();
+      if (shown && shown.toLowerCase() !== route.from.toLowerCase()) {
+        return {
+          summary: `Gmail opened as ${shown}, not ${route.from}. Don't press Send there`,
+          error: "wrong_account", sent: false, opened_as: shown,
+          tip: `In Gmail, click the profile picture (top right) → Add another account, and sign in with ${route.from} in this same Chrome window. Then ask again.`,
+        };
+      }
+    }
     return {
       summary: `Opened the email to ${who.label} in Gmail${route.from ? ` as ${route.from}` : ""}. Press Send there; Gmail shows "Message sent" when it's gone`,
       sent: false, from: route.from || "the Google account open in your browser",

@@ -382,6 +382,19 @@ test("email 'from my email X': Gmail opens as that account, and the card shows F
   await assert.rejects(t.send_email.plan({ ...args, from: "my email" }), /doesn't look like an email address/);
 });
 
+test("email: if Gmail opens as a different account, Relay says don't press Send", async () => {
+  const gmailAs = (acct) => (env) => (env.ACTION ? { status: "ok" } : { status: "ok", title: `Compose Mail - ${acct} - Gmail - Google Chrome`, app: "chrome" });
+  const args = { to: "allurimanohar05@gmail.com", subject: "Leave", body: "Hi", from: "24pa1a0404@vishnu.edu.in" };
+  const wrong = sandbox({ psReplies: gmailAs("allurimanohar05@gmail.com") });
+  const r = await wrong.t.send_email.run(args);
+  assert.equal(r.error, "wrong_account");
+  assert.match(r.summary, /Gmail opened as allurimanohar05@gmail\.com, not 24pa1a0404@vishnu\.edu\.in\. Don't press Send/);
+  const right = sandbox({ psReplies: gmailAs("24pa1a0404@vishnu.edu.in") });
+  const ok = await right.t.send_email.run(args);
+  assert.ok(!ok.error);
+  assert.match(ok.summary, /as 24pa1a0404@vishnu\.edu\.in\. Press Send/);
+});
+
 test("email from a different address than the saved app password: not sent from the wrong account", async () => {
   const { t, log } = sandbox({ emailAccount: { user: "teja@gmail.com", pass: "abcdabcdabcdabcd" } });
   const args = { to: "rohitc048@gmail.com", subject: "Leave", body: "Hi", from: "allurimanohar05@gmail.com" };
