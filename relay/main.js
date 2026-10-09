@@ -13,13 +13,14 @@ const { createQuick } = require("./src/quick");
 const { createHistory } = require("./src/history");
 const { createPs } = require("./src/winps");
 const { createMemory } = require("./src/memory");
+const { ACTIVE_WINDOW_PS } = require("./src/system");
 
 const SHOW_SHORTCUT = "Control+Shift+Space";
 const VOICE_SHORTCUT = "Control+Shift+M";
 
 let win = null, tray = null;
 let quitting = false;
-let settings, agent, toolkit, history, memory;
+let settings, agent, toolkit, history, memory, ps;
 const startHidden = process.argv.includes("--hidden"); // launched by Windows at sign-in
 let client = null, clientKey = "";
 const pendingConfirms = new Map();
@@ -143,9 +144,11 @@ function refreshTrayMenu() {
 
 // ---------- Screen capture (screenshots, "what's on my screen", checking WhatsApp before sending) ----------
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false } = {}) {
+async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false, activeWindow = false } = {}) {
   const hide = hideRelay && win && win.isVisible() && !win.isMinimized();
-  if (hide) { win.hide(); await wait(350); } // let the window fade out first
+  if (hide) { win.hide(); await wait(500); } // let the window fade out fully, so Relay isn't in the picture
+  // which window is in front now that Relay is out of the way (its title tells Gemini which tab or app "this" means)
+  const activeP = activeWindow && ps ? ps.run(ACTIVE_WINDOW_PS, {}, { timeout: 8000 }).catch(() => null) : Promise.resolve(null);
   try {
     const displays = screen.getAllDisplays();
     const main = screen.getPrimaryDisplay();
@@ -155,7 +158,10 @@ async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false 
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: w, height: h } });
     let list = sources.filter((s) => !s.thumbnail.isEmpty());
     if (primary) list = list.filter((s) => s.display_id === String(main.id)).concat(list).slice(0, 1); // only the main screen (falls back to the first)
-    return list.map((s) => ({ png: s.thumbnail.toPNG() }));
+    const shots = list.map((s) => ({ png: s.thumbnail.toPNG() }));
+    const active = await activeP;
+    if (active && active.status === "ok") shots.active = { title: active.title || "", app: active.app || "" };
+    return shots;
   } finally {
     if (hide) win.show();
   }
@@ -202,7 +208,7 @@ app.whenReady().then(() => {
   });
   const apps = createApps();
   apps.load(); // warm the app list in the background
-  const ps = createPs();
+  ps = createPs();
   toolkit = createTools({
     paths, apps, ps, memory, settings,
     platform: process.platform,

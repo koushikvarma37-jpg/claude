@@ -61,7 +61,7 @@ function sandbox({ psReplies = {}, askReplies = [], emailAccount = null, waInsta
     openPath: async (p) => { log.opened.push(p); return ""; },
     openExternal: async (u) => { log.opened.push(u); },
     trash: async () => {},
-    captureScreen: async () => [{ png: Buffer.from("fakepng") }],
+    captureScreen: async (o = {}) => Object.assign([{ png: Buffer.from("fakepng") }], o.activeWindow ? { active: { title: "Shirts – Vastrado - Google Chrome", app: "chrome" } } : {}),
     ask: async (parts, opts) => { log.asked.push({ parts, opts }); const r = askReplies.shift(); if (r instanceof Error) throw r; return typeof r === "string" ? r : JSON.stringify(r || {}); },
     clipboard: clipboard || { read: () => log.clipboard, write: (t) => { log.clipboard = t; } },
     sendMail: async (m) => { log.mails.push(m); },
@@ -192,9 +192,13 @@ test("screenshot is saved in Pictures\\Screenshots; look_at_screen sends the ima
   const r = await t.take_screenshot.run({});
   assert.ok(fs.existsSync(r.path));
   assert.equal(path.dirname(r.path), path.join(known.pictures, "Screenshots"));
-  const look = await t.look_at_screen.run({ question: "explain the error" });
+  const look = await t.look_at_screen.run({ question: "what is on my chrome tab" });
   assert.equal(look.answer, "The error says: file not found.");
   assert.equal(log.asked[0].parts[0].inlineData.mimeType, "image/png");
+  // Gemini is told which window/tab is in front, so it doesn't read another tab's title
+  assert.match(log.asked[0].parts[1].text, /The window in front is "Shirts – Vastrado - Google Chrome"/);
+  assert.match(log.asked[0].parts[1].text, /only the SELECTED tab/);
+  assert.equal(look.summary, 'Looked at "Shirts – Vastrado"');
 });
 
 // ---------- files ----------

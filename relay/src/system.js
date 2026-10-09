@@ -54,6 +54,25 @@ $disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Obj
    wifi = $wifi; disks = $disks } | ConvertTo-Json -Compress -Depth 4
 `;
 
+// The window in front (after Relay hides): its title and app. For a browser the title is the selected tab's.
+const ACTIVE_WINDOW_PS = String.raw`
+Add-Type @"
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class RelayFg {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+}
+"@
+$h = [RelayFg]::GetForegroundWindow()
+$sb = New-Object System.Text.StringBuilder 512
+[RelayFg]::GetWindowText($h, $sb, 512) | Out-Null
+[uint32]$procId = 0
+[RelayFg]::GetWindowThreadProcessId($h, [ref]$procId) | Out-Null
+$name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
+@{ status = 'ok'; title = $sb.ToString(); app = $name } | ConvertTo-Json -Compress
+`;
+
 const SETTINGS_PAGES = {
   wifi: "ms-settings:network-wifi", network: "ms-settings:network-status", bluetooth: "ms-settings:bluetooth",
   display: "ms-settings:display", sound: "ms-settings:sound", battery: "ms-settings:batterysaver", power: "ms-settings:powersleep",
@@ -253,15 +272,19 @@ function createSystemTools(ctx) {
         parameters: { type: "OBJECT", properties: { question: { type: "STRING", description: "What to find out, e.g. 'explain the error message' or 'what is this page about'." } }, required: ["question"] },
       },
       async run({ question }) {
-        const shots = await ctx.captureScreen({ hideRelay: true, maxWidth: 1920 });
+        const shots = await ctx.captureScreen({ hideRelay: true, maxWidth: 1920, activeWindow: true });
         if (!shots.length) throw new Error("Couldn't capture the screen.");
+        const active = shots.active && shots.active.title ? shots.active : null;
         const parts = shots.map((s) => ({ inlineData: { mimeType: "image/png", data: s.png.toString("base64") } }));
-        parts.push({ text: `This is a screenshot of the user's Windows screen${shots.length > 1 ? "s" : ""}. ${question}\nAnswer directly and concisely, as if you were looking over their shoulder. Quote exact text (error messages, names, numbers) when it matters.` });
+        parts.push({ text: `This is a screenshot of the user's Windows screen${shots.length > 1 ? "s" : ""}.` +
+          (active ? `\nThe window in front is "${active.title}"${active.app ? ` (app: ${active.app})` : ""}. Words like "this", "my tab", "this page", "this error" mean that window. In a browser, only the SELECTED tab's page is what the user is looking at: describe that page's content, and don't report the titles of other tabs in the tab bar unless asked.` : "\nFocus on the window in front.") +
+          `\nThe user asked: ${question}\nAnswer directly and concisely, as if you were looking over their shoulder. Quote exact text (error messages, names, numbers) when it matters.` });
         const answer = await ctx.ask(parts);
-        return { summary: "Looked at your screen", answer };
+        const shortTitle = active ? active.title.replace(/\s+[-–—]\s+(Google Chrome|Microsoft\u200b? Edge|Mozilla Firefox|Brave|Opera)$/i, "").slice(0, 70) : "";
+        return { summary: shortTitle ? `Looked at "${shortTitle}"` : "Looked at your screen", window: active ? active.title : null, answer };
       },
     },
   };
 }
 
-module.exports = { createSystemTools, SETTINGS_PAGES, MEDIA_KEYS, SCRIPTS: { VOLUME_PS, MEDIA_PS, BRIGHTNESS_PS, RADIO_PS, STATUS_PS } };
+module.exports = { createSystemTools, SETTINGS_PAGES, MEDIA_KEYS, SCRIPTS: { VOLUME_PS, MEDIA_PS, BRIGHTNESS_PS, RADIO_PS, STATUS_PS, ACTIVE_WINDOW_PS }, ACTIVE_WINDOW_PS };
