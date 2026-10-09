@@ -261,7 +261,10 @@ test("WhatsApp to a saved number: opens the chat, checks the screen, then sends"
   const r = await t.send_whatsapp.run({ to: "amma", message: "I'll be late today" });
   assert.equal(r.sent, true);
   assert.deepEqual(log.ps.map((e) => e.ACTION), ["open_uri", "send"]);
-  assert.equal(log.ps[0].URI, "whatsapp://send?phone=919876543210&text=I'll%20be%20late%20today");
+  assert.equal(log.ps[0].URI, "whatsapp://send?phone=919876543210", "text isn't put in the link (it would join an old draft)");
+  assert.equal(log.ps[0].TEXT, "I'll be late today", "the box is emptied and the message pasted");
+  assert.equal(r.final, true);
+  assert.equal(log.asked.length, 1, "one look at the screen");
 });
 
 test("WhatsApp: if the message never shows up in the box, nothing is sent", async () => {
@@ -282,7 +285,7 @@ test("WhatsApp by name: clicks the search box, checks the name, opens the chat, 
   ] });
   const r = await t.send_whatsapp.run({ to: "Ravi", message: "Bring the DSP record tomorrow" });
   assert.equal(r.sent, true);
-  assert.deepEqual(log.ps.map((e) => e.ACTION), ["escape", "click", "type", "open", "paste", "send"]);
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["escape", "click", "type", "open", "replace", "send"]);
   assert.deepEqual([log.ps[1].X, log.ps[1].Y], [120, 180]);
   await new Promise((res) => setTimeout(res, 350));
   assert.equal(log.clipboard, "user's clipboard");
@@ -331,13 +334,58 @@ test("WhatsApp: a number with a missing digit is caught before anything happens"
   assert.equal((await t.send_whatsapp.plan({ to: "7383444556", message: "hi" })).title, "Send on WhatsApp to 7383444556 (+917383444556)?");
 });
 
-test("WhatsApp by number: if WhatsApp doesn't fill in the text, Relay clicks the message box, pastes, checks, sends", async () => {
+test("WhatsApp by number: if the box isn't right, Relay clicks it, empties it, pastes, checks, sends", async () => {
   const opened = { whatsapp_visible: true, open_chat_name: "Teja Varma (You)", message_box_text: null, message_box: [930, 400, 960, 900] };
-  const { t, log } = sandbox({ askReplies: [opened, opened, opened, { ...opened, message_box_text: "hi" }] });
+  const { t, log } = sandbox({ askReplies: [opened, { ...opened, message_box_text: "hi" }] });
   const r = await t.send_whatsapp.run({ to: "7383444556", message: "hi" });
   assert.equal(r.sent, true);
-  assert.deepEqual(log.ps.map((e) => e.ACTION), ["open_uri", "click", "paste", "send"]);
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["open_uri", "fill", "send"]);
   assert.deepEqual([log.ps[1].X, log.ps[1].Y], [650, 945], "centre of Gemini's [ymin, xmin, ymax, xmax] box");
+});
+
+test("WhatsApp: an old draft in the box is never sent along (the 'how are youHow are you?' bug)", async () => {
+  const chat = { whatsapp_visible: true, open_chat_name: "Teja Varma (You)", message_box: [930, 400, 960, 900] };
+  const { t, log } = sandbox({ askReplies: [{ ...chat, message_box_text: "how are youHow are you?" }, { ...chat, message_box_text: "How are you?" }] });
+  const r = await t.send_whatsapp.run({ to: "7383444556", message: "How are you?" });
+  assert.equal(r.sent, true);
+  assert.deepEqual(log.ps.map((e) => e.ACTION), ["open_uri", "fill", "send"], "refilled the box before sending");
+  // and if it still isn't exactly the message, nothing is sent
+  const stuck = sandbox({ askReplies: [{ ...chat, message_box_text: "draft How are you?" }, { ...chat, message_box_text: "draft How are you?" }] });
+  const r2 = await stuck.t.send_whatsapp.run({ to: "7383444556", message: "How are you?" });
+  assert.equal(r2.sent, false);
+  assert.ok(!stuck.log.ps.some((e) => e.ACTION === "send"));
+});
+
+test("exact message check: punctuation/case are fine, extra text is not", () => {
+  assert.ok(textMatches("How are you?", "how are you"));
+  assert.ok(!textMatches("how are you", "how are youHow are you?"));
+  assert.ok(!textMatches("hi", "hi hi"));
+  const long = "Please bring the DSP lab record tomorrow morning, we have the internal exam at 9 and sir will check it.";
+  assert.ok(textMatches(long, long.slice(0, 95)), "a long message cut off on screen still counts");
+});
+
+test("agent: a finished send replies straight away, without another Gemini call", async () => {
+  const sb = sandbox({ askReplies: [{ whatsapp_visible: true, open_chat_name: "Amma", message_box_text: "on my way" }] });
+  let calls = 0;
+  const fakeClient = { models: { generateContent: async () => {
+    calls++;
+    const c = { id: "1", name: "send_whatsapp", args: { to: "9876543210", message: "on my way" } };
+    return { candidates: [{ content: { role: "model", parts: [{ functionCall: c }] } }], functionCalls: [c] };
+  } } };
+  const agent = createAgent({ getClient: () => fakeClient, getModel: () => "t", toolkit: sb.toolkit, paths: sb.paths, onEvent: () => {}, askConfirm: async () => true });
+  const out = await agent.run("tell amma on my way", { turnId: "a" });
+  assert.equal(out.text, "Sent to 9876543210 on WhatsApp.");
+  assert.equal(calls, 1, "only the first call to understand the command");
+  assert.equal(agent.getHistory().at(-1).role, "model", "history stays valid for the next command");
+});
+
+test("quick: simple WhatsApp sends skip Gemini; files and missing messages don't", async () => {
+  const { createQuick } = require("../src/quick");
+  const q = createQuick({ apps: { find: async () => [] } });
+  assert.deepEqual(await q.match("Send how are you to 7383444556 on WhatsApp."), { tool: "send_whatsapp", args: { to: "7383444556", message: "how are you" } });
+  assert.deepEqual(await q.match("send a hi message to Teja Varma on WhatsApp"), { tool: "send_whatsapp", args: { to: "Teja Varma", message: "hi" } });
+  assert.deepEqual(await q.match("WhatsApp Amma: I'll be late"), { tool: "send_whatsapp", args: { to: "Amma", message: "I'll be late" } });
+  for (const t of ["send my resume to Ravi on whatsapp", "send it to Amma on whatsapp", "send a message to Amma on WhatsApp", "send a WhatsApp message to Amma on whatsapp"]) assert.equal(await q.match(t), null, t);
 });
 
 test("WhatsApp by name: the search box can be given as Gemini's box_2d", async () => {
@@ -439,4 +487,55 @@ test("email from a different address than the saved app password: not sent from 
 test("email to someone without a saved address asks for it", async () => {
   const { t } = sandbox();
   await assert.rejects(t.send_email.plan({ to: "Ravi", subject: "x", body: "y" }), /don't have an email address for Ravi/);
+});
+
+// ---------- PowerShell host ----------
+test("PowerShell: if the background PowerShell can't start, every command still runs (one-shot), and it stops retrying", async () => {
+  const { EventEmitter } = require("events");
+  const { createPs } = require("../src/winps");
+  let spawns = 0, onces = 0;
+  const fakeSpawn = () => {
+    spawns++;
+    const p = new EventEmitter();
+    p.stdout = Object.assign(new EventEmitter(), { setEncoding() {} }); p.stderr = new EventEmitter();
+    p.stdin = Object.assign(new EventEmitter(), { write: () => setImmediate(() => p.emit("exit", 1)) });
+    p.kill = () => {};
+    return p;
+  };
+  const ps = createPs({ platform: "win32", spawn: fakeSpawn, exec: (e, a, o, cb) => { onces++; cb(null, '{"status":"ok"}', ""); } });
+  for (let i = 0; i < 4; i++) assert.equal((await ps.run("x")).status, "ok");
+  assert.equal(spawns, 2);
+  assert.equal(onces, 4);
+});
+
+// Runs the real background PowerShell when one is available (set RELAY_PWSH to a pwsh/powershell path)
+test("PowerShell host: env inputs, early replies, errors, timeouts and restarts", { skip: !process.env.RELAY_PWSH }, async () => {
+  const { createPs } = require("../src/winps");
+  const ps = createPs({ exe: process.env.RELAY_PWSH, platform: "win32" });
+  const S = "function Reply($o) { $o | ConvertTo-Json -Compress; throw 'RELAY_DONE' }\nif ($env:RELAY_EARLY) { Reply @{ status = 'early' } }\n@{ status = 'ok'; text = $env:RELAY_TEXT; stale = $env:RELAY_EARLY } | ConvertTo-Json -Compress";
+  const tricky = "how are you 🙏 తెలుగు \"q\" $(rm -rf /)";
+  assert.deepEqual(await ps.run(S, { TEXT: tricky }), { status: "ok", text: tricky, stale: null });
+  assert.equal((await ps.run(S, { EARLY: "1" })).status, "early");
+  assert.equal((await ps.run(S, { TEXT: "y" })).stale, null, "inputs from the last command are cleared");
+  assert.deepEqual(await ps.run("throw 'boom'"), { status: "error", error: "boom" });
+  assert.match((await ps.run("Start-Sleep -Seconds 10", {}, { timeout: 1500 })).error, /too long/);
+  assert.equal((await ps.run(S, { TEXT: "back" })).text, "back", "a fresh PowerShell takes over");
+  ps.stop();
+});
+
+test("quick screen checks ask Gemini not to 'think'; models that can't turn it off still answer", async () => {
+  const seen = [];
+  const make = (rejectThinking) => ({ models: { generateContent: async (req) => {
+    seen.push(req.config.thinkingConfig || null);
+    if (rejectThinking && req.config.thinkingConfig) throw Object.assign(new Error("thinking budget is not supported for this model"), { status: 400 });
+    return { candidates: [{ content: { role: "model", parts: [{ text: "{}" }] } }], text: "{}" };
+  } } });
+  for (const reject of [false, true]) {
+    seen.length = 0;
+    const client = make(reject);
+    const agent = createAgent({ getClient: () => client, getModel: () => "t", toolkit: { tools: {}, declarations: [] }, paths: { known: {} }, onEvent: () => {}, askConfirm: async () => true });
+    assert.equal(await agent.ask([{ text: "x" }], { json: true, fast: true }), "{}");
+    assert.deepEqual(seen[0], { thinkingBudget: 0 });
+    assert.equal(seen.length, reject ? 2 : 1);
+  }
 });

@@ -19,8 +19,8 @@ const MEDIA_PS = NATIVE + String.raw`
 
 const BRIGHTNESS_PS = String.raw`
 try { $cur = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness | Select-Object -First 1).CurrentBrightness }
-catch { @{ status = 'unsupported' } | ConvertTo-Json -Compress; exit }
-if ($null -eq $cur) { @{ status = 'unsupported' } | ConvertTo-Json -Compress; exit }
+catch { @{ status = 'unsupported' } | ConvertTo-Json -Compress; throw 'RELAY_DONE' }
+if ($null -eq $cur) { @{ status = 'unsupported' } | ConvertTo-Json -Compress; throw 'RELAY_DONE' }
 $target = $cur
 if ($env:RELAY_LEVEL) { $target = [int]$env:RELAY_LEVEL } elseif ($env:RELAY_CHANGE) { $target = $cur + [int]$env:RELAY_CHANGE }
 $target = [math]::Max(0, [math]::Min(100, $target))
@@ -39,7 +39,7 @@ function Await($op, $type) { $t = $asTask.MakeGenericMethod($type).Invoke($null,
 Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) ([Windows.Devices.Radios.RadioAccessStatus]) | Out-Null
 $radios = Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]])
 $r = $radios | Where-Object { $_.Kind -eq $env:RELAY_KIND } | Select-Object -First 1
-if (-not $r) { @{ status = 'missing' } | ConvertTo-Json -Compress; exit }
+if (-not $r) { @{ status = 'missing' } | ConvertTo-Json -Compress; throw 'RELAY_DONE' }
 $res = Await ($r.SetStateAsync($env:RELAY_STATE)) ([Windows.Devices.Radios.RadioAccessStatus])
 @{ status = $(if ("$res" -eq 'Allowed') { 'ok' } else { 'denied' }); state = "$($r.State)" } | ConvertTo-Json -Compress
 `;
@@ -56,6 +56,7 @@ $disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Obj
 
 // The window in front (after Relay hides): its title and app. For a browser the title is the selected tab's.
 const ACTIVE_WINDOW_PS = String.raw`
+if (-not ('RelayFg' -as [type])) {
 Add-Type @"
 using System; using System.Text; using System.Runtime.InteropServices;
 public static class RelayFg {
@@ -64,6 +65,7 @@ public static class RelayFg {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
 }
 "@
+}
 $h = [RelayFg]::GetForegroundWindow()
 $sb = New-Object System.Text.StringBuilder 512
 [RelayFg]::GetWindowText($h, $sb, 512) | Out-Null
@@ -85,6 +87,9 @@ const SETTINGS_PAGES = {
 };
 
 const MEDIA_KEYS = { play_pause: 0xb3, next: 0xb0, previous: 0xb1, stop: 0xb2 };
+
+/** A screenshot as a Gemini image part (JPEG when captured that way, else PNG). */
+const imagePart = (s) => (s.jpg ? { inlineData: { mimeType: "image/jpeg", data: s.jpg.toString("base64") } } : { inlineData: { mimeType: "image/png", data: s.png.toString("base64") } });
 
 function stamp(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -272,10 +277,10 @@ function createSystemTools(ctx) {
         parameters: { type: "OBJECT", properties: { question: { type: "STRING", description: "What to find out, e.g. 'explain the error message' or 'what is this page about'." } }, required: ["question"] },
       },
       async run({ question }) {
-        const shots = await ctx.captureScreen({ hideRelay: true, maxWidth: 1920, activeWindow: true });
+        const shots = await ctx.captureScreen({ hideRelay: true, maxWidth: 1600, activeWindow: true, format: "jpeg", quality: 82 });
         if (!shots.length) throw new Error("Couldn't capture the screen.");
         const active = shots.active && shots.active.title ? shots.active : null;
-        const parts = shots.map((s) => ({ inlineData: { mimeType: "image/png", data: s.png.toString("base64") } }));
+        const parts = shots.map(imagePart);
         parts.push({ text: `This is a screenshot of the user's Windows screen${shots.length > 1 ? "s" : ""}.` +
           (active ? `\nThe window in front is "${active.title}"${active.app ? ` (app: ${active.app})` : ""}. Words like "this", "my tab", "this page", "this error" mean that window. In a browser, only the SELECTED tab's page is what the user is looking at: describe that page's content, and don't report the titles of other tabs in the tab bar unless asked.` : "\nFocus on the window in front.") +
           `\nThe user asked: ${question}\nAnswer directly and concisely, as if you were looking over their shoulder. Quote exact text (error messages, names, numbers) when it matters.` });
@@ -287,4 +292,4 @@ function createSystemTools(ctx) {
   };
 }
 
-module.exports = { createSystemTools, SETTINGS_PAGES, MEDIA_KEYS, SCRIPTS: { VOLUME_PS, MEDIA_PS, BRIGHTNESS_PS, RADIO_PS, STATUS_PS, ACTIVE_WINDOW_PS }, ACTIVE_WINDOW_PS };
+module.exports = { imagePart, createSystemTools, SETTINGS_PAGES, MEDIA_KEYS, SCRIPTS: { VOLUME_PS, MEDIA_PS, BRIGHTNESS_PS, RADIO_PS, STATUS_PS, ACTIVE_WINDOW_PS }, ACTIVE_WINDOW_PS };

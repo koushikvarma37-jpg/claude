@@ -218,6 +218,14 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
         responses.push({ functionResponse: { id: call.id, name: call.name, response: result } });
       }
       history.push({ role: "user", parts: responses });
+      // A finished send (WhatsApp, email) says everything already: reply with it straight away instead of
+      // asking Gemini for a closing sentence, which saves a few seconds.
+      const results = responses.map((r) => r.functionResponse.response);
+      if (results.every((r) => r && r.final && !r.error && !r.declined)) {
+        const text = results.map((r) => (/[.!?]$/.test(r.summary) ? r.summary : r.summary + ".")).join(" ");
+        history.push({ role: "model", parts: [{ text }] });
+        return { text };
+      }
     }
     return { text: "That took too many steps, so I stopped. Try breaking it into smaller commands." };
   }
@@ -243,11 +251,16 @@ function createAgent({ getClient, getModel, getFallbackModels = async () => [], 
   }
 
   /** A one-off question to Gemini about an image, screenshot or file (used by look_at_screen, read_file and WhatsApp checks). */
-  async function ask(parts, { json = false } = {}) {
-    const { res } = await callModel(getClient(), {
-      contents: [{ role: "user", parts }],
-      config: { temperature: 0.2, ...(json ? { responseMimeType: "application/json" } : {}) },
-    }, { turnId: null, allowSwitch: true });
+  async function ask(parts, { json = false, fast = false } = {}) {
+    const config = { temperature: 0.2, ...(json ? { responseMimeType: "application/json" } : {}) };
+    const request = (cfg) => callModel(getClient(), { contents: [{ role: "user", parts }], config: cfg }, { turnId: null, allowSwitch: true });
+    let res;
+    if (fast) {
+      // Quick checks (reading WhatsApp from a screenshot) don't need Gemini to "think" first; that takes seconds.
+      try { ({ res } = await request({ ...config, thinkingConfig: { thinkingBudget: 0 } })); }
+      catch (err) { if (!/thinking/i.test(String(err && err.message))) throw err; } // this model can't turn it off: ask normally
+    }
+    if (!res) ({ res } = await request(config));
     const text = (res.text || "").trim();
     if (!text) throw new Error("Gemini didn't answer. Try again.");
     return text;

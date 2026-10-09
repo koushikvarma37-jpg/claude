@@ -30,9 +30,10 @@ Relay is named after the electronic relay, where a small signal switches a bigge
 ### How sending works
 - **Nothing is ever sent without you seeing it first.** Relay shows the exact message or email with **Send** and **Cancel**.
 - **WhatsApp** uses the WhatsApp Desktop app (install it from the Microsoft Store and log in once).
-  - If Relay knows the person's number, it opens their chat with the message typed in.
+  - If Relay knows the person's number, it opens their chat, empties the message box (so an old draft is never sent along) and pastes your message.
   - If it only knows a name, it finds WhatsApp's search box on screen, clicks it and searches your chats. It checks that the name really went into the search box before going on.
-  - Before pressing Enter, Relay takes a screenshot and checks two things: that the right chat is open and that the message is in the box. If anything looks wrong, it stops and sends nothing.
+  - Before pressing Enter, Relay takes one screenshot and checks that the right chat is open and that the box holds exactly your message, nothing more. If anything looks wrong, it stops and sends nothing.
+  - Sending by number takes a few seconds: Relay keeps one PowerShell running in the background and checks the screen with a small image.
   - Saving people's numbers ("Amma's number is …") makes sending faster and more reliable.
 - **Email:**
   - **Without setup**, Relay writes the email and opens it in Gmail for you to press Send. Say which address to send from ("from my email x@gmail.com") and Gmail opens as that account. That account must be signed in in the same Chrome window: in Gmail, click the profile picture, then **Add another account**. If Gmail opens as a different account anyway, Relay warns you not to press Send. The approval card always shows the **From** address.
@@ -59,7 +60,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-2.0.7.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-2.1.0.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 
@@ -70,7 +71,7 @@ On first launch, paste a free Gemini key from **https://aistudio.google.com/apik
 - **Ctrl+Shift+M**: open Relay and start listening.
 - Closing the window keeps Relay running in the **system tray** (the ^ arrow near the clock). Right-click the tray icon for **Start listening**, **Start with Windows** and **Quit Relay**.
 - Relay **starts with Windows** by default and waits quietly in the tray. Turn this off in Settings or the tray menu.
-- **Instant commands** run immediately without asking Gemini (and work offline or when the free limit is used up): `open whatsapp`, `open downloads`, `open youtube`, `search youtube for …`, `google …`, `sort my downloads`, `make a folder called …`, `undo`, `volume up`, `volume 40`, `mute`, `pause`, `next song`, `brightness 70`, `lock`, `take a screenshot`, `battery`.
+- **Instant commands** run immediately without asking Gemini (and work offline or when the free limit is used up): `open whatsapp`, `open downloads`, `open youtube`, `search youtube for …`, `google …`, `sort my downloads`, `make a folder called …`, `undo`, `volume up`, `volume 40`, `mute`, `pause`, `next song`, `brightness 70`, `lock`, `take a screenshot`, `battery`, and `send <message> to <name or number> on WhatsApp` (still shows the message for approval).
 
 ### Past conversations
 Every chat is saved **only on this PC** and listed in the sidebar (**Ctrl+B** to show or hide), grouped by Today, Yesterday and so on. Click a chat to see it again and **carry on**, since Relay restores what it remembered. Search past commands, hover a chat and click the bin twice to delete it, or delete everything in Settings.

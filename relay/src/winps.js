@@ -1,12 +1,17 @@
-// Runs a PowerShell script on Windows and reads back the JSON it prints last.
+// Runs PowerShell scripts on Windows and reads back the JSON each one prints last.
 // Inputs always go in through environment variables (RELAY_*), never pasted into the script,
 // so names and messages can't break or inject into the script.
-const { execFile } = require("child_process");
+//
+// Speed: starting PowerShell and compiling the C# helpers takes 1-2 s, so Relay keeps ONE PowerShell
+// running in the background (the "host") and sends it scripts over stdin. The helpers compile once.
+// Scripts end with Reply/Done (a JSON line, then throw 'RELAY_DONE'), never `exit`, which would end the host.
+const { execFile, spawn: nodeSpawn } = require("child_process");
 
 const encode = (script) => Buffer.from(script, "utf16le").toString("base64");
 
 /** Shared C# helpers: window focus, key presses and the default speaker's volume (Core Audio). */
 const NATIVE = String.raw`
+if (-not ('RelayWin' -as [type])) {
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class RelayWin {
@@ -98,26 +103,134 @@ public static class RelayAudio {
   public static void Mute(bool m) { Marshal.ThrowExceptionForHR(Vol().SetMute(m, Guid.Empty)); }
 }
 "@
+}
 `;
 
-function createPs({ platform = process.platform, exec = execFile } = {}) {
-  /** Runs `script` with `env` (keys without the RELAY_ prefix). Resolves to the parsed JSON, or { status: "error", error }. */
-  function run(script, env = {}, { timeout = 30000 } = {}) {
-    if (platform !== "win32") return Promise.resolve({ status: "error", error: "This only works on Windows." });
+// The background PowerShell: reads one JSON request per line ({ script: base64 UTF-8, env }), runs it,
+// streams its output, then prints the end marker.
+const END = "<<RELAY_END>>";
+const HOST_PS = String.raw`
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+[Console]::InputEncoding = [Text.Encoding]::UTF8
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) { break }
+  if (-not $line.Trim()) { continue }
+  try {
+    $req = $line | ConvertFrom-Json
+    Get-ChildItem env: | Where-Object { $_.Name -like 'RELAY_*' } | ForEach-Object { Remove-Item -LiteralPath ('env:' + $_.Name) }
+    if ($req.env) { foreach ($p in $req.env.PSObject.Properties) { Set-Item -LiteralPath ('env:RELAY_' + $p.Name) -Value ([string]$p.Value) } }
+    $code = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($req.script))
+    & ([scriptblock]::Create($code)) | ForEach-Object { [Console]::Out.WriteLine([string]$_) }
+  } catch {
+    if ("$_" -ne 'RELAY_DONE') { [Console]::Out.WriteLine((@{ status = 'error'; error = "$_" } | ConvertTo-Json -Compress)) }
+  }
+  [Console]::Out.WriteLine('` + END + String.raw`')
+  [Console]::Out.Flush()
+}
+`;
+
+function lastJson(text) {
+  const lines = String(text || "").trim().split(/\r?\n/).reverse();
+  for (const l of lines) { try { const j = JSON.parse(l); if (j && typeof j === "object") return j; } catch {} }
+  return null;
+}
+
+function createPs({ platform = process.platform, exec = execFile, spawn = nodeSpawn, exe = "powershell.exe", keepAlive = true } = {}) {
+  let host = null;            // { proc, buf, current }
+  const queue = [];
+  let busy = false;
+  let hostFailures = 0;       // background PowerShell died before ever answering: after 2, just use one-shot
+
+  /** One-shot: start PowerShell just for this script (used if the background one can't start). */
+  function runOnce(script, env, timeout) {
     const fullEnv = { ...process.env };
     for (const [k, v] of Object.entries(env)) if (v !== undefined && v !== null) fullEnv[`RELAY_${k}`] = String(v);
     const prelude = "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [Text.Encoding]::UTF8\n";
     return new Promise((resolve) => {
-      exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encode(prelude + script)],
+      exec(exe, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encode(prelude + script)],
         { windowsHide: true, timeout, env: fullEnv, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-          const last = String(stdout || "").trim().split(/\r?\n/).pop();
-          try { return resolve(JSON.parse(last)); } catch {}
-          const msg = String(stderr || "").split(/\r?\n/).find((l) => l.trim()) || (err && err.message) || "PowerShell didn't answer.";
+          const j = lastJson(stdout);
+          if (j) return resolve(j);
+          const msg = String(stderr || "").split(/\r?\n/).find((l) => l.trim() && !/RELAY_DONE/.test(l)) || (err && err.message) || "PowerShell didn't answer.";
           resolve({ status: "error", error: msg.trim() });
         });
     });
   }
-  return { run, platform };
+
+  function startHost() {
+    let proc;
+    try { proc = spawn(exe, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encode(HOST_PS)], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }); }
+    catch { return null; }
+    const h = { proc, buf: "", current: null, dead: false, answered: false };
+    proc.stdout.setEncoding("utf8");
+    proc.stdout.on("data", (chunk) => {
+      h.buf += chunk;
+      let i;
+      while ((i = h.buf.indexOf(END)) >= 0) {
+        const out = h.buf.slice(0, i);
+        h.buf = h.buf.slice(i + END.length).replace(/^\r?\n/, "");
+        const cur = h.current; h.current = null;
+        h.answered = true;
+        if (cur) cur.done(lastJson(out) || { status: "error", error: "PowerShell gave no answer." });
+      }
+    });
+    proc.stderr.on("data", () => {});
+    const die = () => {
+      if (h.dead) return;
+      h.dead = true;
+      if (!h.answered) hostFailures++;
+      if (host === h) host = null;
+      if (h.current) { const cur = h.current; h.current = null; cur.done(null); } // null → retry one-shot
+    };
+    proc.on("exit", die); proc.on("error", die);
+    proc.stdin.on("error", die);
+    return h;
+  }
+
+  function viaHost(script, env, timeout) {
+    if (hostFailures >= 2) return Promise.resolve(null);
+    if (!host || host.dead) host = startHost();
+    const h = host;
+    if (!h) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { // a stuck script: end this PowerShell; the next call starts a fresh one
+        if (h.current) { h.current = null; resolve({ status: "error", error: "PowerShell took too long." }); }
+        try { h.proc.kill(); } catch {}
+      }, timeout);
+      h.current = { done: (r) => { clearTimeout(timer); resolve(r); } };
+      const clean = {};
+      for (const [k, v] of Object.entries(env)) if (v !== undefined && v !== null) clean[k] = String(v);
+      try { h.proc.stdin.write(JSON.stringify({ script: Buffer.from(script, "utf8").toString("base64"), env: clean }) + "\n"); }
+      catch { h.current = null; clearTimeout(timer); resolve(null); }
+    });
+  }
+
+  /** Runs `script` with `env` (keys without the RELAY_ prefix). Resolves to the parsed JSON, or { status: "error", error }. */
+  function run(script, env = {}, { timeout = 30000 } = {}) {
+    if (platform !== "win32" && exe === "powershell.exe") return Promise.resolve({ status: "error", error: "This only works on Windows." });
+    return new Promise((resolve) => {
+      queue.push(async () => {
+        let r = keepAlive ? await viaHost(script, env, timeout) : null;
+        if (r === null) r = await runOnce(script, env, timeout);
+        resolve(r);
+      });
+      pump();
+    });
+  }
+  async function pump() {
+    if (busy) return;
+    busy = true;
+    while (queue.length) { try { await queue.shift()(); } catch {} }
+    busy = false;
+  }
+
+  /** Start the background PowerShell and compile the helpers now, so the first real command is fast. */
+  function warm() { return run(NATIVE + "\n@{ status = 'ok' } | ConvertTo-Json -Compress", {}, { timeout: 60000 }); }
+  function stop() { if (host) { try { host.proc.kill(); } catch {} host = null; } }
+
+  return { run, warm, stop, platform };
 }
 
-module.exports = { createPs, NATIVE };
+module.exports = { createPs, NATIVE, HOST_PS };

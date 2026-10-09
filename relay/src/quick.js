@@ -15,13 +15,31 @@ const FOLDERS = ["desktop", "downloads", "documents", "pictures", "music", "vide
 // Signs that a request has more than one part or needs real understanding
 const COMPLEX = /\b(and|then|after|also|but|if|with|into|from|to|all|every|my\s+\w+\s+(?:file|folder|pdf)s?)\b|,|;/i;
 
+// "send my resume / this file / the photo to …" means a file, which needs Gemini, not a text message
+const REFERS_TO_FILE = /^(?:my |the |this |that |a |an )?(?:file|pdf|photo|pic|picture|image|document|doc|resume|cv|screenshot|video|it|this|that|these|those)s?$/i;
+
+// "send a message to Amma" says who, not what: Gemini asks what to say
+const NO_MESSAGE = /^(?:a|an|the|whats ?app|(?:a |an |the )?(?:whats ?app )?(?:message|msg|text))$/i;
+
 function createQuick({ apps }) {
   async function match(raw) {
     const t = String(raw || "").trim().replace(/\s+/g, " ").replace(/[.!?]+$/, "");
-    if (!t || t.length > 80) return null;
+    if (!t || t.length > 600) return null;
     let m;
 
     if (/^(?:undo|undo (?:that|it|the last (?:change|action))|revert (?:that|it))$/i.test(t)) return { tool: "undo_last", args: {} };
+
+    // WhatsApp: "send how are you to 98765 43210 on WhatsApp", "send a hi message to Amma on WhatsApp",
+    // "WhatsApp Amma: I'll be late". Still shows the message for approval; the person is resolved by the tool.
+    const wa = "(?:on|via|in|through|using)\\s+whats\\s?app";
+    if ((m = raw.trim().match(new RegExp(`^(?:please\\s+)?send\\s+(?:a\\s+|an\\s+)?(?:whats\\s?app\\s+)?message\\s+(?:saying\\s+|that\\s+)?["“']?(.+?)["”']?\\s+to\\s+(.+?)\\s+${wa}[.!]?$`, "i"))) ||
+        (m = raw.trim().match(new RegExp(`^(?:please\\s+)?send\\s+(?:a\\s+|an\\s+)?["“']?(.+?)["”']?\\s+message\\s+to\\s+(.+?)\\s+${wa}[.!]?$`, "i"))) ||
+        (m = raw.trim().match(new RegExp(`^(?:please\\s+)?(?:send|text|message)\\s+["“']?(.+?)["”']?\\s+to\\s+(.+?)\\s+${wa}[.!]?$`, "i")))) {
+      if (!REFERS_TO_FILE.test(m[1].trim()) && !NO_MESSAGE.test(m[1].trim()) && m[2].trim().split(/\s+/).length <= 4) return { tool: "send_whatsapp", args: { to: m[2].trim(), message: m[1].trim() } };
+      return null; // "send my resume to Ravi": a file, not a text; Gemini explains
+    }
+    if ((m = raw.trim().match(/^whats\s?app\s+([^:]{1,40}?)\s*:\s*(.+)$/i))) return { tool: "send_whatsapp", args: { to: m[1].trim(), message: m[2].trim() } };
+    if (t.length > 80) return null; // everything below is a short command
 
     // PC controls
     const pls = "(?:please\\s+)?";

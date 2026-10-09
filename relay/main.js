@@ -144,7 +144,7 @@ function refreshTrayMenu() {
 
 // ---------- Screen capture (screenshots, "what's on my screen", checking WhatsApp before sending) ----------
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false, activeWindow = false } = {}) {
+async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false, activeWindow = false, format = "png", quality = 80 } = {}) {
   const hide = hideRelay && win && win.isVisible() && !win.isMinimized();
   if (hide) { win.hide(); await wait(500); } // let the window fade out fully, so Relay isn't in the picture
   // which window is in front now that Relay is out of the way (its title tells Gemini which tab or app "this" means)
@@ -158,7 +158,8 @@ async function captureScreen({ hideRelay = false, maxWidth = 0, primary = false,
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: w, height: h } });
     let list = sources.filter((s) => !s.thumbnail.isEmpty());
     if (primary) list = list.filter((s) => s.display_id === String(main.id)).concat(list).slice(0, 1); // only the main screen (falls back to the first)
-    const shots = list.map((s) => ({ png: s.thumbnail.toPNG() }));
+    // JPEG for Gemini: about 20x smaller than PNG, so checks upload and answer much faster
+    const shots = list.map((s) => (format === "jpeg" ? { jpg: s.thumbnail.toJPEG(quality) } : { png: s.thumbnail.toPNG() }));
     const active = await activeP;
     if (active && active.status === "ok") shots.active = { title: active.title || "", app: active.app || "" };
     return shots;
@@ -209,6 +210,7 @@ app.whenReady().then(() => {
   const apps = createApps();
   apps.load(); // warm the app list in the background
   ps = createPs();
+  setTimeout(() => ps.warm().catch(() => {}), 3000); // start the background PowerShell early, so the first command is quick
   toolkit = createTools({
     paths, apps, ps, memory, settings,
     platform: process.platform,
@@ -255,7 +257,7 @@ app.whenReady().then(() => {
 });
 
 app.on("second-instance", showWindow);
-app.on("will-quit", () => globalShortcut.unregisterAll());
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (ps) ps.stop(); });
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { if (quitting) app.quit(); });
 

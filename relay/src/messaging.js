@@ -13,7 +13,7 @@
 //   • Otherwise it opens the email, fully written, in Gmail in the browser; the user presses Send.
 const { NATIVE } = require("./winps");
 const { normalizePhone, phoneProblem, isEmail } = require("./memory");
-const { ACTIVE_WINDOW_PS } = require("./system");
+const { ACTIVE_WINDOW_PS, imagePart } = require("./system");
 
 // One script, several small actions (RELAY_ACTION). Each action first finds WhatsApp's window and brings it to
 // the front, and refuses to press any key unless WhatsApp really is the window in front.
@@ -21,7 +21,7 @@ const WA_PS = NATIVE + String.raw`
 [RelayWin]::SetProcessDPIAware() | Out-Null   # real pixels, so clicks land where the screenshot shows things
 Add-Type -AssemblyName System.Windows.Forms
 function Find-WA { return ,([RelayWin]::FindWhatsApp()) }
-function Reply($o) { $o | ConvertTo-Json -Compress; exit }
+function Reply($o) { $o | ConvertTo-Json -Compress; throw 'RELAY_DONE' }
 $action = $env:RELAY_ACTION
 if ($action -eq 'open_uri') {
   Start-Process $env:RELAY_URI
@@ -57,11 +57,14 @@ function ClickAt {
   Front; [RelayWin]::Click($x, $y); Start-Sleep -Milliseconds 400
 }
 switch ($action) {
+  'open_uri' { if ($env:RELAY_TEXT) { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '{DELETE}'; Keys '^v'; Start-Sleep -Milliseconds 400 } }   # the chat opens with the cursor in its box
   'escape' { Keys '{ESC}'; Start-Sleep -Milliseconds 300; Keys '{ESC}'; Start-Sleep -Milliseconds 300 }
   'click' { ClickAt }
   'type' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '^v'; Start-Sleep -Milliseconds 1500 }
   'open' { if ($env:RELAY_MODE -eq 'down') { Keys '{DOWN}'; Start-Sleep -Milliseconds 300 }; Keys '{ENTER}'; Start-Sleep -Milliseconds 1500 }
   'paste' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^v'; Start-Sleep -Milliseconds 500 }
+  'replace' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '{DELETE}'; Keys '^v'; Start-Sleep -Milliseconds 400 }   # empties the box (old drafts) first
+  'fill' { ClickAt; Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '{DELETE}'; Keys '^v'; Start-Sleep -Milliseconds 400 }
   'clear' { Keys '^a'; Keys '{DELETE}'; Start-Sleep -Milliseconds 200 }
   'send' { if ($env:RELAY_X) { ClickAt }; Keys '{ENTER}'; Start-Sleep -Milliseconds 700 }   # click the message box first so Enter lands there
 }
@@ -81,11 +84,17 @@ function nameMatches(wanted, shown) {
 }
 
 /** Is (the start of) the message in the message box? Gemini's reading of the screen may differ slightly. */
+/**
+ * Is the message box holding exactly this message, and nothing else (no old draft before or after it)?
+ * Punctuation and case are ignored, since Gemini reads them from a screenshot. A long message may wrap or be
+ * cut off on screen, so for those the start and end must match and the length must be about right.
+ */
 function textMatches(wanted, shown) {
   const w = norm(wanted), s = norm(shown);
   if (!w || !s) return false;
-  const head = w.slice(0, 40);
-  return s.includes(head) || w.includes(s.slice(0, 40)) || (s.length > 20 && head.includes(s.slice(0, 20)));
+  if (w === s) return true;
+  if (w.length < 60) return false;
+  return s.startsWith(w.slice(0, 40)) && (s.endsWith(w.slice(-20)) || s.length < w.length) && Math.abs(s.length - w.length) <= w.length * 0.1;
 }
 
 function createMessaging(ctx) {
@@ -102,9 +111,9 @@ function createMessaging(ctx) {
 
   /** Ask Gemini what WhatsApp is showing right now (on the main screen, so click positions line up). */
   async function readWhatsApp() {
-    const shots = await ctx.captureScreen({ hideRelay: false, primary: true, maxWidth: 1920 });
+    const shots = await ctx.captureScreen({ hideRelay: false, primary: true, maxWidth: 1366, format: "jpeg", quality: 75 });
     if (!shots.length) throw new Error("Couldn't capture the screen to check WhatsApp.");
-    const parts = [{ inlineData: { mimeType: "image/png", data: shots[0].png.toString("base64") } }];
+    const parts = [imagePart(shots[0])];
     parts.push({ text: 'Look at the WhatsApp window in this screenshot. Reply with JSON only:\n' +
       '{"whatsapp_visible": boolean,\n' +
       ' "search_box": [ymin, xmin, ymax, xmax] or null  (box_2d of the chat-list search field, e.g. "Search or start a new chat", normalised 0-1000),\n' +
@@ -113,7 +122,7 @@ function createMessaging(ctx) {
       ' "open_chat_name": string or null  (name or number in the header of the chat that is open on the right; null if no chat is open),\n' +
       ' "message_box_text": string or null  (text typed in the message box at the bottom of the open chat, not yet sent),\n' +
       ' "popup": string or null  (any dialog or error shown)}' });
-    const raw = await ctx.ask(parts, { json: true });
+    const raw = await ctx.ask(parts, { json: true, fast: true });
     try { return JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, "").trim()); } catch { return { whatsapp_visible: false }; }
   }
 
@@ -160,35 +169,35 @@ function createMessaging(ctx) {
     try { saved = ctx.clipboard ? ctx.clipboard.read() : null; } catch {}
     try {
       if (who.phone) {
-        await wa("open_uri", { URI: `whatsapp://send?phone=${who.phone}&text=${encodeURIComponent(text)}`, WAIT: 2500 });
-        let seen = null;
-        for (let attempt = 0; attempt < 3; attempt++) {           // the chat can take a moment to load
-          try { seen = await readWhatsApp(); } catch (e) { seen = { error: e.message }; break; }
-          if (seen.popup && /invalid|not on whatsapp/i.test(seen.popup)) return { summary: `+${who.phone} isn't on WhatsApp`, error: "not_on_whatsapp" };
-          if (seen.message_box_text && textMatches(text, seen.message_box_text)) break;
-          await wait(1500);
-        }
-        if (seen && seen.error) {
-          // Couldn't check the screen (e.g. Gemini's limit). The link itself opened the right number, so send.
+        // Open the chat by number. The text isn't put in the link (WhatsApp would add it to an old draft);
+        // instead the box is emptied and the message pasted, then one look at the screen confirms it before Enter.
+        await wa("open_uri", { URI: `whatsapp://send?phone=${who.phone}`, WAIT: 1200, TEXT: text });
+        let seen;
+        try { seen = await readWhatsApp(); } catch (e) { seen = { error: e.message }; }
+        if (seen.error) {
+          // Couldn't check the screen (e.g. Gemini's limit). The link opened the right number and the box was refilled, so send.
           await wa("send");
-          return { summary: `Sent to ${who.label} on WhatsApp`, sent: true, note: "Couldn't double-check the screen, so have a quick look in WhatsApp." };
+          return { summary: `Sent to ${who.label} on WhatsApp`, sent: true, final: true, note: "Couldn't double-check the screen, so have a quick look in WhatsApp." };
         }
-        if (!seen || !textMatches(text, seen.message_box_text)) {
-          // The chat opened but WhatsApp didn't fill in the text: click the message box and paste it, then check again.
-          const box = seen && seen.whatsapp_visible ? centre(seen.message_box) : null;
-          if (box && !seen.message_box_text) {
-            const clicked = await wa("click", { X: box.x, Y: box.y });
-            if (clicked.status !== "outside") {
-              await wa("paste", { TEXT: text });
-              seen = await readWhatsApp().catch(() => null);
-              if (seen && textMatches(text, seen.message_box_text)) { await wa("send", sendAt(seen)); return { summary: `Sent to ${who.label} on WhatsApp`, sent: true }; }
-              if (seen && seen.message_box_text) await wa("clear");
-            }
+        if (seen.popup && /invalid|not on whatsapp/i.test(seen.popup)) return { summary: `+${who.phone} isn't on WhatsApp`, error: "not_on_whatsapp" };
+        if (!textMatches(text, seen.message_box_text) && !seen.open_chat_name && !seen.message_box) {
+          await wait(2000);                                       // WhatsApp was still starting: give the chat a moment
+          seen = await readWhatsApp().catch(() => seen);
+        }
+        if (!textMatches(text, seen.message_box_text)) {
+          // Not right yet (box wasn't focused, or still loading): click the message box, empty it, paste, look again.
+          const box = seen.whatsapp_visible ? centre(seen.message_box) : null;
+          if (box) {
+            const filled = await wa("fill", { X: box.x, Y: box.y, TEXT: text });
+            if (filled.status !== "outside") seen = await readWhatsApp().catch(() => seen);
           }
-          return { summary: "WhatsApp opened the chat, but I couldn't get the message into the box, so I didn't send anything", error: "not_verified", sent: false, tip: "The chat is open in WhatsApp; you can type it there yourself." };
         }
-        await wa("send", sendAt(seen));
-        return { summary: `Sent to ${who.label} on WhatsApp`, sent: true };
+        if (textMatches(text, seen.message_box_text)) {
+          await wa("send", sendAt(seen));
+          return { summary: `Sent to ${who.label} on WhatsApp`, sent: true, final: true };
+        }
+        if (seen.message_box_text) await wa("clear");
+        return { summary: "WhatsApp opened the chat, but the message box didn't show exactly your message, so I didn't send anything", error: "not_verified", sent: false, tip: "The chat is open in WhatsApp; you can type it there yourself." };
       }
 
       // Only a name: find WhatsApp's search box on screen, click it, type the name and check it's really there,
@@ -213,12 +222,12 @@ function createMessaging(ctx) {
           return { summary: "I couldn't type into WhatsApp's search box, so nothing was sent", error: "search_failed", tip: "Tell me their number and I'll save it; sending by number is more reliable." };
         }
         await wa("open", { MODE: mode });
-        await wa("paste", { TEXT: text });
+        await wa("replace", { TEXT: text });                    // empties any old draft in that chat first
         seen = await readWhatsApp();
         const rightChat = nameMatches(who.searchName, seen.open_chat_name), rightText = textMatches(text, seen.message_box_text);
         if (rightChat && rightText) {
           await wa("send", sendAt(seen));
-          return { summary: `Sent to ${seen.open_chat_name} on WhatsApp`, sent: true };
+          return { summary: `Sent to ${seen.open_chat_name} on WhatsApp`, sent: true, final: true };
         }
         await wa("clear");                                       // remove what we pasted, wherever it went
         if (rightChat) return { summary: "Something didn't look right in WhatsApp, so I didn't send the message", error: "not_verified", sent: false };
@@ -279,7 +288,7 @@ function createMessaging(ctx) {
         if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNECTION/i.test(msg)) throw new Error("Couldn't reach Gmail. Check your internet connection.");
         throw new Error(`The email wasn't sent: ${msg}`);
       }
-      return { summary: `Emailed ${who.label}`, sent: true, subject };
+      return { summary: `Emailed ${who.label}`, sent: true, final: true, subject };
     }
     // authuser opens Gmail as that account (when it's signed in to this browser), so it goes from the right address
     const params = new URLSearchParams({ ...(route.from ? { authuser: route.from } : {}), view: "cm", fs: "1", to: who.email, su: String(subject || ""), body: String(body || "") });
@@ -299,7 +308,7 @@ function createMessaging(ctx) {
     }
     return {
       summary: `Opened the email to ${who.label} in Gmail${route.from ? ` as ${route.from}` : ""}. Press Send there; Gmail shows "Message sent" when it's gone`,
-      sent: false, from: route.from || "the Google account open in your browser",
+      sent: false, final: true, from: route.from || "the Google account open in your browser",
       tip: route.from ? `If Gmail opens a different account, sign in to ${route.from} in your browser first.` : "To let Relay send emails by itself, add a Gmail app password in Settings.",
     };
   }
