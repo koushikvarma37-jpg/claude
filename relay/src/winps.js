@@ -24,16 +24,24 @@ public static class RelayWin {
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
-  // A visible top-level window whose title is exactly this (e.g. "WhatsApp"); works for Store apps hosted by other processes
-  public static IntPtr FindTitled(string title) {
-    IntPtr found = IntPtr.Zero;
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  // Every visible WhatsApp window: titled "WhatsApp" or "(3) WhatsApp" (unread count), never a browser tab.
+  // The new app has two: the outer frame (WhatsApp.Root) and the page inside it (msedgewebview2); the page comes first.
+  public static IntPtr[] FindWhatsApp() {
+    var page = new System.Collections.Generic.List<IntPtr>(); var frame = new System.Collections.Generic.List<IntPtr>();
+    var re = new System.Text.RegularExpressions.Regex(@"^(\(\d+\)\s*)?WhatsApp( Beta)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     EnumWindows(delegate(IntPtr h, IntPtr l) {
       if (!IsWindowVisible(h)) return true;
       var sb = new System.Text.StringBuilder(256); GetWindowText(h, sb, 256);
-      if (string.Equals(sb.ToString().Trim(), title, StringComparison.OrdinalIgnoreCase)) { found = h; return false; }
+      if (!re.IsMatch(sb.ToString().Trim())) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      string name = "";
+      try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName.ToLower(); } catch (Exception) { }
+      if (name.Contains("webview")) page.Add(h); else frame.Add(h);
       return true;
     }, IntPtr.Zero);
-    return found;
+    page.AddRange(frame);
+    return page.ToArray();
   }
   public static void Click(int x, int y) { SetCursorPos(x, y); System.Threading.Thread.Sleep(60); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
   public static void Key(byte k) { keybd_event(k, 0, 0, UIntPtr.Zero); keybd_event(k, 0, 2, UIntPtr.Zero); }

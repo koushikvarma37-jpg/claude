@@ -59,7 +59,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-2.0.5.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-2.0.6.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 

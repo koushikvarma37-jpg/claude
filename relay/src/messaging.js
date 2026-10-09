@@ -20,42 +20,42 @@ const { ACTIVE_WINDOW_PS } = require("./system");
 const WA_PS = NATIVE + String.raw`
 [RelayWin]::SetProcessDPIAware() | Out-Null   # real pixels, so clicks land where the screenshot shows things
 Add-Type -AssemblyName System.Windows.Forms
-function Find-WA {
-  # by exact window title first (the Store app's window can belong to a host process), then by process name
-  foreach ($t in @('WhatsApp', 'WhatsApp Beta')) { $w = [RelayWin]::FindTitled($t); if ($w -ne [IntPtr]::Zero) { return $w } }
-  $q = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -like '*WhatsApp*' } | Select-Object -First 1
-  if ($q) { return $q.MainWindowHandle }
-  return [IntPtr]::Zero
-}
+function Find-WA { return ,([RelayWin]::FindWhatsApp()) }
 function Reply($o) { $o | ConvertTo-Json -Compress; exit }
 $action = $env:RELAY_ACTION
 if ($action -eq 'open_uri') {
   Start-Process $env:RELAY_URI
-  $deadline = (Get-Date).AddSeconds(25); $w = [IntPtr]::Zero   # WhatsApp can take a while to start cold
-  while ((Get-Date) -lt $deadline) { $w = Find-WA; if ($w -ne [IntPtr]::Zero) { break }; Start-Sleep -Milliseconds 400 }
-  if ($w -eq [IntPtr]::Zero) { Reply @{ status = 'not_running' } }
+  $deadline = (Get-Date).AddSeconds(25)   # WhatsApp can take a while to start cold
+  while ((Get-Date) -lt $deadline) { if ((Find-WA).Length -gt 0) { break }; Start-Sleep -Milliseconds 400 }
   Start-Sleep -Milliseconds ([int]$env:RELAY_WAIT)
 }
-$h = Find-WA
-if ($h -eq [IntPtr]::Zero) { Reply @{ status = 'not_running' } }
-if (-not [RelayWin]::Focus($h)) { Start-Sleep -Milliseconds 300; if (-not [RelayWin]::Focus($h)) { Reply @{ status = 'not_focused' } } }
-function Front { if ([RelayWin]::GetForegroundWindow() -ne $h) { Reply @{ status = 'not_focused' } } }
+$all = Find-WA
+if ($all.Length -eq 0) { Reply @{ status = 'not_running' } }
+function IsWA($x) { foreach ($w in $all) { if ($w -eq $x) { return $true } }; return $false }
+# bring WhatsApp to the front: any of its windows being in front counts
+$h = $all[0]
+foreach ($w in $all) { [RelayWin]::Focus($w) | Out-Null; if (IsWA ([RelayWin]::GetForegroundWindow())) { $h = $w; break } }
+if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Start-Sleep -Milliseconds 300; [RelayWin]::Focus($h) | Out-Null }
+if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Reply @{ status = 'not_focused' } }
+function Front { if (-not (IsWA ([RelayWin]::GetForegroundWindow()))) { Reply @{ status = 'not_focused' } } }
 function Keys($k) { Front; [System.Windows.Forms.SendKeys]::SendWait($k) }
+function ClickAt {
+  # RELAY_X, RELAY_Y: 0-1000 across the main screen (as Gemini reads the screenshot). Only clicks inside a WhatsApp window.
+  $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $x = $b.X + [int]($b.Width * [double]$env:RELAY_X / 1000); $y = $b.Y + [int]($b.Height * [double]$env:RELAY_Y / 1000)
+  $inside = $false
+  foreach ($w in $all) { $r = New-Object RelayWin+RECT; [RelayWin]::GetWindowRect($w, [ref]$r) | Out-Null; if ($x -ge $r.Left -and $x -le $r.Right -and $y -ge $r.Top -and $y -le $r.Bottom) { $inside = $true } }
+  if (-not $inside) { Reply @{ status = 'outside' } }
+  Front; [RelayWin]::Click($x, $y); Start-Sleep -Milliseconds 400
+}
 switch ($action) {
   'escape' { Keys '{ESC}'; Start-Sleep -Milliseconds 300; Keys '{ESC}'; Start-Sleep -Milliseconds 300 }
-  'click' {
-    # X, Y: 0-1000 across the main screen (as Gemini reads the screenshot). Only clicks inside WhatsApp's window.
-    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $x = $b.X + [int]($b.Width * [double]$env:RELAY_X / 1000); $y = $b.Y + [int]($b.Height * [double]$env:RELAY_Y / 1000)
-    $r = New-Object RelayWin+RECT; [RelayWin]::GetWindowRect($h, [ref]$r) | Out-Null
-    if ($x -lt $r.Left -or $x -gt $r.Right -or $y -lt $r.Top -or $y -gt $r.Bottom) { Reply @{ status = 'outside' } }
-    Front; [RelayWin]::Click($x, $y); Start-Sleep -Milliseconds 400
-  }
+  'click' { ClickAt }
   'type' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^a'; Keys '^v'; Start-Sleep -Milliseconds 1500 }
   'open' { if ($env:RELAY_MODE -eq 'down') { Keys '{DOWN}'; Start-Sleep -Milliseconds 300 }; Keys '{ENTER}'; Start-Sleep -Milliseconds 1500 }
   'paste' { Set-Clipboard -Value $env:RELAY_TEXT; Keys '^v'; Start-Sleep -Milliseconds 500 }
   'clear' { Keys '^a'; Keys '{DELETE}'; Start-Sleep -Milliseconds 200 }
-  'send' { Keys '{ENTER}'; Start-Sleep -Milliseconds 700 }
+  'send' { if ($env:RELAY_X) { ClickAt }; Keys '{ENTER}'; Start-Sleep -Milliseconds 700 }   # click the message box first so Enter lands there
 }
 Reply @{ status = 'ok' }
 `;
@@ -116,6 +116,9 @@ function createMessaging(ctx) {
     return null;
   }
 
+  /** Where to click before pressing Enter: the message box Gemini saw, so the key lands in it. */
+  const sendAt = (seen) => { const c = seen && centre(seen.message_box); return c ? { X: c.x, Y: c.y } : {}; };
+
   /** Works out who to message: a number, or a saved contact, or (if WhatsApp is installed) a name to search for. */
   function resolveRecipient(to) {
     const raw = String(to || "").trim();
@@ -170,13 +173,13 @@ function createMessaging(ctx) {
             if (clicked.status !== "outside") {
               await wa("paste", { TEXT: text });
               seen = await readWhatsApp().catch(() => null);
-              if (seen && textMatches(text, seen.message_box_text)) { await wa("send"); return { summary: `Sent to ${who.label} on WhatsApp`, sent: true }; }
+              if (seen && textMatches(text, seen.message_box_text)) { await wa("send", sendAt(seen)); return { summary: `Sent to ${who.label} on WhatsApp`, sent: true }; }
               if (seen && seen.message_box_text) await wa("clear");
             }
           }
           return { summary: "WhatsApp opened the chat, but I couldn't get the message into the box, so I didn't send anything", error: "not_verified", sent: false, tip: "The chat is open in WhatsApp; you can type it there yourself." };
         }
-        await wa("send");
+        await wa("send", sendAt(seen));
         return { summary: `Sent to ${who.label} on WhatsApp`, sent: true };
       }
 
@@ -206,7 +209,7 @@ function createMessaging(ctx) {
         seen = await readWhatsApp();
         const rightChat = nameMatches(who.searchName, seen.open_chat_name), rightText = textMatches(text, seen.message_box_text);
         if (rightChat && rightText) {
-          await wa("send");
+          await wa("send", sendAt(seen));
           return { summary: `Sent to ${seen.open_chat_name} on WhatsApp`, sent: true };
         }
         await wa("clear");                                       // remove what we pasted, wherever it went

@@ -347,6 +347,13 @@ test("WhatsApp by name: the search box can be given as Gemini's box_2d", async (
   assert.deepEqual([log.ps[1].X, log.ps[1].Y], [250, 190]);
 });
 
+test("WhatsApp: Relay clicks the message box before pressing Enter, so the key lands in the right window", async () => {
+  const { t, log } = sandbox({ askReplies: [{ whatsapp_visible: true, open_chat_name: "Amma", message_box_text: "on my way", message_box: [930, 400, 960, 900] }] });
+  assert.equal((await t.send_whatsapp.run({ to: "9876543210", message: "on my way" })).sent, true);
+  const send = log.ps.find((e) => e.ACTION === "send");
+  assert.deepEqual([send.X, send.Y], [650, 945]);
+});
+
 test("WhatsApp: Relay refuses to type when it can't bring WhatsApp to the front", async () => {
   const { t } = sandbox({ psReplies: { open_uri: { status: "not_focused" } } });
   await assert.rejects(t.send_whatsapp.run({ to: "9876543210", message: "hi" }), /nothing was sent/);
