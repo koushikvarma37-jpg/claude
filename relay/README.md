@@ -35,7 +35,7 @@ Relay is named after the electronic relay, where a small signal switches a bigge
   - Before pressing Enter, Relay takes a screenshot and checks two things: that the right chat is open and that the message is in the box. If anything looks wrong, it stops and sends nothing.
   - Saving people's numbers ("Amma's number is …") makes sending faster and more reliable.
 - **Email:**
-  - **Without setup**, Relay writes the email and opens it in Gmail for you to press Send.
+  - **Without setup**, Relay writes the email and opens it in Gmail for you to press Send. Say which address to send from ("from my email x@gmail.com") and Gmail opens as that account. The approval card always shows the **From** address.
   - **To let Relay send emails itself:** open **Settings → Sending email**, then add your Gmail (or college Google) address and an *app password*. Turn on 2-Step Verification first, then create the password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). It's stored encrypted, like the API key.
 
 ### Reminders
@@ -59,7 +59,7 @@ The old Orbit matched fixed phrases ("if the command says open WhatsApp…"), so
 
 ## Install (Windows)
 
-**Easiest:** run **`Relay-Setup-2.0.2.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
+**Easiest:** run **`Relay-Setup-2.0.3.exe`**. It installs in a few seconds, adds a desktop and Start menu shortcut, and opens Relay.
 
 > Windows may show **"Windows protected your PC"** because the installer isn't code-signed (signing certificates are paid). Click **More info → Run anyway**.
 

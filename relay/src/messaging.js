@@ -197,12 +197,25 @@ function createMessaging(ctx) {
     return { missing: true, label: raw };
   }
 
-  async function sendEmail({ to, subject, body, cc }) {
+  /**
+   * Which of the user's own addresses the email goes from, and how:
+   *   direct – Relay sends it itself (an app password is saved for that address)
+   *   gmail  – Relay opens it in Gmail, signed in as that address when one is named
+   */
+  function emailRoute(from) {
+    const account = ctx.settings.emailAccount();
+    const wanted = isEmail(from) ? String(from).trim() : "";
+    if (account && (!wanted || wanted.toLowerCase() === account.user.toLowerCase())) return { mode: "direct", from: account.user, account };
+    return { mode: "gmail", from: wanted || (ctx.settings.get && ctx.settings.get("emailAddress")) || "" };
+  }
+
+  async function sendEmail({ to, subject, body, cc, from }) {
     const who = resolveEmail(to);
     if (who.ambiguous) return { summary: `More than one contact matches "${to}"`, error: "ambiguous", matches: who.ambiguous };
     if (who.missing) return { summary: `I don't have an email address for ${who.label}`, error: "need_email", tip: "Ask the user for it, then call save_contact and try again." };
     const ccList = (Array.isArray(cc) ? cc : cc ? [cc] : []).map(String).filter(isEmail);
-    const account = ctx.settings.emailAccount();
+    const route = emailRoute(from);
+    const account = route.mode === "direct" ? route.account : null;
     if (account) {
       try {
         await ctx.sendMail({ from: account, to: who.email, cc: ccList, subject: String(subject || ""), text: String(body || "") });
@@ -214,13 +227,18 @@ function createMessaging(ctx) {
       }
       return { summary: `Emailed ${who.label}`, sent: true, subject };
     }
-    const params = new URLSearchParams({ view: "cm", fs: "1", to: who.email, su: String(subject || ""), body: String(body || "") });
+    // authuser opens Gmail as that account (when it's signed in to this browser), so it goes from the right address
+    const params = new URLSearchParams({ ...(route.from ? { authuser: route.from } : {}), view: "cm", fs: "1", to: who.email, su: String(subject || ""), body: String(body || "") });
     if (ccList.length) params.set("cc", ccList.join(","));
     await ctx.openExternal(`https://mail.google.com/mail/?${params.toString()}`);
-    return { summary: `Opened the email to ${who.label} in Gmail. Check it and press Send`, sent: false, tip: "To let Relay send emails by itself, add a Gmail app password in Settings." };
+    return {
+      summary: `Opened the email to ${who.label} in Gmail${route.from ? ` as ${route.from}` : ""}. Press Send there; Gmail shows "Message sent" when it's gone`,
+      sent: false, from: route.from || "the Google account open in your browser",
+      tip: route.from ? `If Gmail opens a different account, sign in to ${route.from} in your browser first.` : "To let Relay send emails by itself, add a Gmail app password in Settings.",
+    };
   }
 
-  return { sendWhatsApp, sendEmail, resolveRecipient, resolveEmail };
+  return { sendWhatsApp, sendEmail, resolveRecipient, resolveEmail, emailRoute };
 }
 
 function createMessagingTools(ctx) {
@@ -248,22 +266,25 @@ function createMessagingTools(ctx) {
       confirm: true,
       decl: {
         name: "send_email",
-        description: "Write and send an email. `to` is an email address or a saved contact's name. Write a clear subject and a complete, well-written body from what the user said (polite, natural, signed 'Teja' unless told otherwise). If no address is known, ask the user for it. The user sees and approves it first automatically.",
+        description: "Write and send an email. `to` is an email address or a saved contact's name. Write a clear subject and a complete, well-written body from what the user said (polite, natural, signed 'Teja' unless told otherwise). If the user says which of their own addresses to send from, pass it as `from`. If no recipient address is known, ask the user for it. The user sees and approves it first automatically.",
         parameters: { type: "OBJECT", properties: {
           to: { type: "STRING", description: "Email address or contact name." },
           subject: { type: "STRING", description: "Subject line." },
           body: { type: "STRING", description: "Full email text, with greeting and sign-off." },
           cc: { type: "ARRAY", items: { type: "STRING" }, description: "Optional CC addresses." },
+          from: { type: "STRING", description: "Optional: the user's own email address to send from." },
         }, required: ["to", "subject", "body"] },
       },
-      async plan({ to, subject, body, cc }) {
+      async plan({ to, subject, body, cc, from }) {
         const who = m.resolveEmail(to);
         if (who.ambiguous) throw new Error(`More than one contact matches "${to}": ${who.ambiguous.join(", ")}. Say which one.`);
         if (who.missing) throw new Error(`I don't have an email address for ${who.label}. Tell me their address and I'll save it.`);
-        const direct = !!ctx.settings.emailAccount();
+        if (from && !isEmail(from)) throw new Error(`"${from}" doesn't look like an email address to send from.`);
+        const route = m.emailRoute(from);
+        const direct = route.mode === "direct";
         return {
           title: direct ? `Send this email to ${who.label}?` : `Open this email to ${who.label} in Gmail?`,
-          lines: [`To: ${who.email}`, ...(cc && cc.length ? [`Cc: ${[].concat(cc).join(", ")}`] : []), `Subject: ${subject}`],
+          lines: [`From: ${route.from || "the Google account open in your browser"}`, `To: ${who.email}`, ...(cc && cc.length ? [`Cc: ${[].concat(cc).join(", ")}`] : []), `Subject: ${subject}`],
           message: preview(body), okLabel: direct ? "Send" : "Open in Gmail",
         };
       },

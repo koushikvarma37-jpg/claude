@@ -349,7 +349,7 @@ test("email: sends directly when a Gmail app password is set", async () => {
   const { t, memory, log } = sandbox({ emailAccount: { user: "teja@gmail.com", pass: "abcdabcdabcdabcd" } });
   memory.saveContact({ name: "Ravi sir", email: "ravi@vishnu.edu.in" });
   const plan = await t.send_email.plan({ to: "Ravi sir", subject: "Leave request", body: "Dear Sir,\n\n…\n\nTeja" });
-  assert.deepEqual(plan.lines, ["To: ravi@vishnu.edu.in", "Subject: Leave request"]);
+  assert.deepEqual(plan.lines, ["From: teja@gmail.com", "To: ravi@vishnu.edu.in", "Subject: Leave request"]);
   assert.equal(plan.okLabel, "Send");
   const r = await t.send_email.run({ to: "Ravi sir", subject: "Leave request", body: "Dear Sir" });
   assert.equal(r.sent, true);
@@ -366,6 +366,30 @@ test("email without an app password opens the written email in Gmail", async () 
   assert.equal(u.hostname, "mail.google.com");
   assert.equal(u.searchParams.get("to"), "hr@company.com");
   assert.equal(u.searchParams.get("su"), "Internship");
+});
+
+test("email 'from my email X': Gmail opens as that account, and the card shows From", async () => {
+  const { t, log } = sandbox();
+  const args = { to: "rohitc048@gmail.com", subject: "Leave request", body: "Dear Sir…", from: "allurimanohar05@gmail.com" };
+  const plan = await t.send_email.plan(args);
+  assert.equal(plan.lines[0], "From: allurimanohar05@gmail.com");
+  const r = await t.send_email.run(args);
+  assert.equal(r.sent, false);
+  const u = new URL(log.opened.at(-1));
+  assert.equal(u.searchParams.get("authuser"), "allurimanohar05@gmail.com");
+  assert.equal(u.searchParams.get("to"), "rohitc048@gmail.com");
+  assert.match(r.summary, /as allurimanohar05@gmail\.com/);
+  await assert.rejects(t.send_email.plan({ ...args, from: "my email" }), /doesn't look like an email address/);
+});
+
+test("email from a different address than the saved app password: not sent from the wrong account", async () => {
+  const { t, log } = sandbox({ emailAccount: { user: "teja@gmail.com", pass: "abcdabcdabcdabcd" } });
+  const args = { to: "rohitc048@gmail.com", subject: "Leave", body: "Hi", from: "allurimanohar05@gmail.com" };
+  assert.equal((await t.send_email.plan(args)).okLabel, "Open in Gmail");
+  const r = await t.send_email.run(args);
+  assert.equal(log.mails.length, 0, "SMTP not used for another account");
+  assert.equal(r.sent, false);
+  assert.equal((await t.send_email.run({ ...args, from: "TEJA@gmail.com" })).sent, true, "same account (any case) sends directly");
 });
 
 test("email to someone without a saved address asks for it", async () => {
